@@ -15,6 +15,7 @@
       <button id="btnSave" title="Projekt speichern (⌘S)">Speichern</button>
       <button id="btnExport" class="accent" title="Alle Patterns für die Wand exportieren">Export für Wand</button>
       <button id="btnSettings" title="Projekteinstellungen">⚙</button>
+      <button id="btnUpdate" title="Nach Updates suchen" hidden>↻</button>
       <input type="file" id="fileInput" accept=".json,.ledproj,application/json" hidden>
     </div>
     <div class="transport">
@@ -142,9 +143,28 @@
         <label>Höhe (Pixel) <input id="setH" type="number" min="1" max="256"></label>
       </div>
       <p class="muted">Eine kleine Wand hat 64 × 48 Pixel. Zeichnungen werden beim Ändern der Größe beschnitten bzw. aufgefüllt.</p>
+      <p class="muted native-only" id="appVersion"></p>
       <div class="dialog-actions">
         <button value="cancel">Abbrechen</button>
         <button id="btnSettingsOk" value="ok" class="accent">Übernehmen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="updateDialog">
+    <form method="dialog">
+      <h2>Updates</h2>
+      <p>Installiert: <b>LED Pattern Studio <span id="updCurrent"></span></b></p>
+      <p id="updStatus" class="upd-status"></p>
+      <progress id="updProgress" value="0" max="1" hidden></progress>
+      <pre id="updNotes" class="upd-notes" hidden></pre>
+      <p id="updLast" class="muted" style="font-size:12px"></p>
+      <label class="inline"><input type="checkbox" id="updAuto"> Automatisch nach Updates suchen</label>
+      <div class="dialog-actions">
+        <button id="btnUpdRelease" type="button">Auf GitHub ansehen</button>
+        <button id="btnUpdCheck" type="button">Nach Updates suchen</button>
+        <button value="close">Schließen</button>
+        <button id="btnUpdInstall" type="button" class="accent" hidden>Jetzt installieren</button>
       </div>
     </form>
   </dialog>

@@ -1,0 +1,57 @@
+# Veröffentlicht automatisch eine neue Version, sobald sich die Datei VERSION auf main
+# ändert (oder ein Tag v* gepusht wird). Die installierten Apps finden das Update selbst.
+name: Release
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["VERSION"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version bestimmen
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="$(tr -d ' \r\n' < VERSION)"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Release v$V existiert bereits – nichts zu tun."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tests (Renderer)
+        if: steps.v.outputs.skip != 'true'
+        run: node --test pattern-studio/tests/*.test.js
+
+      - name: App bauen
+        if: steps.v.outputs.skip != 'true'
+        run: ./mac-app/build.sh "${{ steps.v.outputs.version }}" "${{ github.repository }}"
+
+      - name: Prüfsummen
+        if: steps.v.outputs.skip != 'true'
+        working-directory: mac-app/build
+        run: shasum -a 256 LED-Pattern-Studio.dmg LED-Pattern-Studio-mac.zip > SHA256SUMS.txt
+
+      - name: Release veröffentlichen
+        if: steps.v.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          if [ -f "release-notes/v$V.md" ]; then NOTES=(--notes-file "release-notes/v$V.md"); else NOTES=(--generate-notes); fi
+          gh release create "v$V" \
+            mac-app/build/LED-Pattern-Studio.dmg \
+            mac-app/build/LED-Pattern-Studio-mac.zip \
+            mac-app/build/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "LED Pattern Studio $V" "${NOTES[@]}"
