@@ -6,18 +6,12 @@ exportierst am Ende alle Patterns für den Pico 2W.
 
 ## Starten
 
-1. Den Ordner `pattern-studio` auf den Mac kopieren (oder das Repo klonen).
-2. Doppelklick auf **`LED Pattern Studio.command`**.
-   - Ist Chrome, Edge oder Brave installiert, öffnet sich ein eigenes App-Fenster.
-   - Sonst öffnet sich Safari. Das geht auch, nur speichert Safari Dateien in „Downloads“
-     statt mit einem Speichern-Dialog.
-   - Blockiert macOS das Skript beim ersten Mal: Rechtsklick → „Öffnen“. Falls die Datei
-     nicht ausführbar ist, einmal im Terminal `chmod +x "LED Pattern Studio.command"` ausführen.
-3. Alternativ einfach `index.html` im Browser öffnen.
+Am einfachsten installierst du die **Mac-App** (DMG unter Releases, siehe
+[Haupt-README](../README.md)). Sie bringt diese Oberfläche mit und aktualisiert sich selbst.
 
-Du brauchst weder Installation noch Internet. Dein Projekt wird automatisch im Browser
-zwischengespeichert. Mit **Speichern** (⌘S) bekommst du eine richtige Datei
-(`*.ledproj.json`).
+Ohne Installation geht es auch im Browser: Doppelklick auf `LED Pattern Studio.command` oder
+`index.html` öffnen. Dann speichert der Browser das Projekt zwischen. Mit **Speichern** (⌘S)
+bekommst du eine richtige Datei (`*.ledproj.json`).
 
 ## Aufbau
 

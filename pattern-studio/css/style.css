@@ -142,3 +142,11 @@ code { background: var(--panel2); padding: 1px 4px; border-radius: 4px; font-siz
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(30px); background: #2b3040; border: 1px solid var(--line);
   padding: 8px 16px; border-radius: 8px; opacity: 0; transition: all .25s; pointer-events: none; z-index: 10; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- updates / Mac-App */
+.native-only { display: none; }
+body.native .native-only { display: block; }
+.upd-status { font-weight: 600; }
+.upd-notes { background: var(--panel2); border-radius: 8px; padding: 8px 10px; max-height: 220px; overflow-y: auto;
+  white-space: pre-wrap; font: 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; user-select: text; -webkit-user-select: text; }
+#btnUpdate[hidden] { display: none; }

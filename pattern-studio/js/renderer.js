@@ -742,7 +742,7 @@
     LAYER_TYPES, DEFAULT_PARAMS, DEFAULT_PALETTES, BLEND_MODES,
     makeLayer, normalizeLayer, makePattern, normalizePattern, makeProject, normalizeProject,
     renderPattern, toRGBA, checkLoop, envelopeValue, layerPixel,
-    bankLayout, buildBank, decodeBitmap, encodeBitmap,
+    bankLayout, buildBank, decodeBitmap, encodeBitmap, bytesToBase64,
     hexToRgb, rgbToHex, hash3, clone, newId,
   };
 });

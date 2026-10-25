@@ -1,0 +1,27 @@
+# Baut die Mac-App bei jedem Push (zum Testen). Das DMG liegt danach unter
+# "Actions" -> Lauf -> "Artifacts". Veröffentlicht wird nur über release.yml.
+name: Mac-Build
+
+on:
+  push:
+    paths: ["mac-app/**", "pattern-studio/**", ".github/workflows/mac-build.yml"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests (Renderer)
+        run: node --test pattern-studio/tests/*.test.js
+
+      - name: App bauen
+        run: ./mac-app/build.sh "$(tr -d ' \r\n' < VERSION)" "${{ github.repository }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LED-Pattern-Studio
+          path: mac-app/build/LED-Pattern-Studio.dmg
+          retention-days: 14

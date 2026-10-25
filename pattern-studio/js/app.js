@@ -74,6 +74,34 @@
     return 'linear-gradient(90deg,' + pal.concat(pal[0]).join(',') + ')';
   }
 
+  // ------------------------------------------------------------------ native bridge (Mac-App)
+
+  // In der Mac-App läuft die Oberfläche in einem WKWebView; Dateien, Autosave und Updates
+  // übernimmt dann die native Seite (mac-app/Sources/AppController.swift).
+  const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.native);
+  const nativePending = new Map();
+  let nativeReq = 0;
+
+  function nativePost(cmd, payload) {
+    window.webkit.messageHandlers.native.postMessage(Object.assign({ cmd }, payload || {}));
+  }
+
+  function nativeCall(cmd, payload) {
+    return new Promise((resolve) => {
+      const id = ++nativeReq;
+      nativePending.set(id, resolve);
+      nativePost(cmd, Object.assign({ id }, payload || {}));
+    });
+  }
+
+  window.__native = {
+    reply(id, res) {
+      const r = nativePending.get(id);
+      if (r) { nativePending.delete(id); r(res || {}); }
+    },
+    updateState(s) { onUpdateState(s); },
+  };
+
   // ------------------------------------------------------------------ persistence & undo
 
   let saveTimer, undoTimer, loopTimer, lastSnap = null;
@@ -118,7 +146,9 @@
   function scheduleSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.project)); } catch (e) { /* Speicher voll o.ä. */ }
+      const json = JSON.stringify(state.project);
+      if (NATIVE) nativePost('autosave', { data: json });
+      try { localStorage.setItem(STORAGE_KEY, json); } catch (e) { /* Speicher voll o.ä. */ }
     }, 500);
   }
 
@@ -852,12 +882,21 @@
 
   // ------------------------------------------------------------------ files
 
-  function download(name, data, type) {
+  async function download(name, data, type) {
+    if (NATIVE) {
+      const payload = data instanceof Blob
+        ? { base64: R.bytesToBase64(new Uint8Array(await data.arrayBuffer())) }
+        : { text: String(data) };
+      const r = await nativeCall('saveFile', Object.assign({ name }, payload));
+      if (r.error) toast('Fehler: ' + r.error, 4000);
+      return !!r.ok;
+    }
     const blob = data instanceof Blob ? data : new Blob([data], { type });
     const a = el('a', { href: URL.createObjectURL(blob), download: name });
     document.body.append(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    return true;
   }
 
   const safeName = (s) => (s || 'projekt').replace(/[^\wäöüÄÖÜß\- ]+/g, '').trim().replace(/\s+/g, '-') || 'projekt';
@@ -866,6 +905,12 @@
     commitUndo();
     const json = JSON.stringify(state.project, null, 1);
     const name = safeName(state.project.name) + '.ledproj.json';
+    if (NATIVE) {
+      const r = await nativeCall('saveProject', { name, data: json, saveAs: !!saveAs });
+      if (r.ok) toast('Gespeichert: ' + r.name);
+      else if (r.error) toast('Fehler: ' + r.error, 4000);
+      return;
+    }
     if (window.showSaveFilePicker) {
       try {
         if (!state.fileHandle || saveAs) {
@@ -898,6 +943,13 @@
   }
 
   async function openProject() {
+    if (NATIVE) {
+      const r = await nativeCall('openProject');
+      if (!r.ok) { if (r.error) toast('Fehler: ' + r.error, 4000); return; }
+      try { loadProjectObject(JSON.parse(r.text)); toast('Geöffnet: ' + r.name); }
+      catch (e) { toast('Fehler: ' + e.message, 4000); }
+      return;
+    }
     if (window.showOpenFilePicker) {
       try {
         const [h] = await window.showOpenFilePicker({ types: [{ description: 'LEDWall-Projekt', accept: { 'application/json': ['.json'] } }] });
@@ -925,6 +977,7 @@
     const p = R.makeProject();
     p.patterns.push(R.makePattern('Neues Pattern', [R.makeLayer('solid', { palette: ['#000000'], name: 'Hintergrund' })], 4));
     loadProjectObject(p);
+    if (NATIVE) nativePost('fileReset');
   }
 
   // ------------------------------------------------------------------ export
@@ -969,12 +1022,14 @@
     $('expProgress').value = 0;
     $('btnExportBank').disabled = true;
     toast('Rendere Frames…');
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         const data = R.buildBank(state.project, o);
-        download(safeName(state.project.name) + '.lwb', new Blob([data], { type: 'application/octet-stream' }));
-        toast('Bank exportiert (' + (data.length / 1024).toFixed(0) + ' KB)');
-        $('exportDialog').close();
+        const ok = await download(safeName(state.project.name) + '.lwb', new Blob([data], { type: 'application/octet-stream' }));
+        if (ok) {
+          toast('Bank exportiert (' + (data.length / 1024).toFixed(0) + ' KB)');
+          $('exportDialog').close();
+        }
       } catch (e) {
         toast('Export fehlgeschlagen: ' + e.message, 5000);
       }
@@ -1021,6 +1076,88 @@
     changed();
   });
 
+  // ------------------------------------------------------------------ updates (nur Mac-App)
+
+  let upd = null, updNotified = '';
+
+  const UPD_TEXT = {
+    idle: '',
+    checking: 'Suche nach Updates …',
+    uptodate: 'Du hast die neueste Version.',
+    none: 'Noch keine Veröffentlichung gefunden (oder das Repository ist privat).',
+    verifying: 'Prüfe Download …',
+    installing: 'Installiere – die App startet gleich neu …',
+  };
+
+  function onUpdateState(s) {
+    upd = s;
+    const btn = $('btnUpdate');
+    btn.hidden = false;
+    const avail = s.state === 'available';
+    btn.textContent = avail ? '⬆ Update ' + s.latest : '↻';
+    btn.title = avail ? 'Update verfügbar' : 'Nach Updates suchen';
+    btn.classList.toggle('accent', avail);
+    if (avail && !s.manual && updNotified !== s.latest) {
+      updNotified = s.latest;
+      toast('Update ' + s.latest + ' verfügbar – oben rechts klicken', 4000);
+    }
+    renderUpdateDialog();
+  }
+
+  function renderUpdateDialog() {
+    if (!upd) return;
+    const s = upd;
+    $('updCurrent').textContent = s.current;
+    let text = UPD_TEXT[s.state] || '';
+    if (s.state === 'available') text = 'Version ' + s.latest + ' ist verfügbar.';
+    if (s.state === 'downloading') text = 'Lade herunter … ' + s.progress + ' %';
+    if (s.state === 'error') text = '⚠ ' + s.error;
+    $('updStatus').textContent = text;
+    $('updLast').textContent = s.lastCheck ? 'Zuletzt geprüft: ' + s.lastCheck : '';
+    $('updNotes').hidden = !(s.state === 'available' && s.notes);
+    $('updNotes').textContent = s.notes || '';
+    $('updProgress').hidden = s.state !== 'downloading';
+    $('updProgress').value = s.progress / 100;
+    const busy = ['checking', 'downloading', 'verifying', 'installing'].includes(s.state);
+    $('btnUpdCheck').disabled = busy;
+    $('btnUpdInstall').hidden = !(s.state === 'available' || (s.state === 'error' && s.latest && s.latest !== s.current && s.url));
+    $('btnUpdInstall').disabled = busy;
+    $('updAuto').checked = s.autoCheck;
+  }
+
+  function openUpdates(check) {
+    if (!NATIVE) return;
+    renderUpdateDialog();
+    if (!$('updateDialog').open) $('updateDialog').showModal();
+    if (check || !upd || ['idle', 'error', 'none', 'uptodate'].includes(upd.state)) nativePost('update', { action: 'check' });
+  }
+
+  function menuUndo() {
+    if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) &&
+        !['checkbox', 'range', 'color'].includes(document.activeElement.type)) { document.execCommand('undo'); return; }
+    undo();
+  }
+
+  function menuRedo() {
+    if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) &&
+        !['checkbox', 'range', 'color'].includes(document.activeElement.type)) { document.execCommand('redo'); return; }
+    redo();
+  }
+
+  // Von der Mac-App (Menü) aufgerufen
+  window.__app = {
+    newProject: () => newProject(),
+    openProject: () => openProject(),
+    save: () => saveProject(false),
+    saveAs: () => saveProject(true),
+    exportBank: () => openExport(),
+    settings: () => openSettings(),
+    updates: () => openUpdates(true),
+    undo: menuUndo,
+    redo: menuRedo,
+    snapshot: () => { commitUndo(); return JSON.stringify(state.project); },
+  };
+
   // ------------------------------------------------------------------ render all
 
   function renderAll() {
@@ -1055,7 +1192,7 @@
     Object.keys(R.LAYER_TYPES).forEach((t) => $('addLayerSelect').append(el('option', { value: t }, R.LAYER_TYPES[t])));
 
     let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { saved = null; }
+    try { saved = JSON.parse(window.__NATIVE_AUTOSAVE__ || localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { saved = null; }
     if (saved) {
       try { state.project = R.normalizeProject(saved); } catch (e) { saved = null; }
     }
@@ -1078,6 +1215,16 @@
     $('btnSave').onclick = (e) => saveProject(e.altKey);
     $('btnExport').onclick = openExport;
     $('btnSettings').onclick = openSettings;
+    $('btnUpdate').onclick = () => openUpdates(false);
+    $('btnUpdCheck').onclick = () => nativePost('update', { action: 'check' });
+    $('btnUpdInstall').onclick = () => nativePost('update', { action: 'install' });
+    $('updAuto').addEventListener('change', () => nativePost('update', { action: 'autoCheck', value: $('updAuto').checked }));
+    $('btnUpdRelease').onclick = () => { if (upd && upd.url) nativePost('openURL', { url: upd.url }); };
+    if (NATIVE) {
+      document.body.classList.add('native');
+      $('appVersion').textContent = 'Version ' + ((window.__NATIVE_APP__ && window.__NATIVE_APP__.version) || '');
+      nativePost('update', { action: 'state' });
+    }
 
     $('btnPlay').onclick = () => setPlaying(!state.playing);
     $('bpmInput').addEventListener('input', () => { const v = +$('bpmInput').value; if (v >= 20 && v <= 300) state.bpm = v; });
@@ -1183,6 +1330,8 @@
     document.addEventListener('keydown', (e) => {
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
+      // In der Mac-App laufen ⌘-Kürzel über das native Menü
+      if (mod && NATIVE) return;
       if (mod && k === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
       if (mod && k === 'o') { e.preventDefault(); openProject(); return; }
       const tag = (document.activeElement && document.activeElement.tagName) || '';
