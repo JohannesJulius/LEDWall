@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LED Pattern Studio</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">LED&nbsp;Pattern&nbsp;Studio</div>
+    <div class="file-actions">
+      <button id="btnNew" title="Neues Projekt">Neu</button>
+      <button id="btnOpen" title="Projekt öffnen (⌘O)">Öffnen</button>
+      <button id="btnSave" title="Projekt speichern (⌘S)">Speichern</button>
+      <button id="btnExport" class="accent" title="Alle Patterns für die Wand exportieren">Export für Wand</button>
+      <button id="btnSettings" title="Projekteinstellungen">⚙</button>
+      <input type="file" id="fileInput" accept=".json,.ledproj,application/json" hidden>
+    </div>
+    <div class="transport">
+      <button id="btnPlay" class="play" title="Abspielen / Pause (Leertaste)">❚❚</button>
+      <label class="bpm">
+        <input id="bpmInput" type="number" min="20" max="300" step="0.1" value="120">
+        <span>BPM</span>
+      </label>
+      <button id="btnHalf" title="Halbes Tempo">½</button>
+      <button id="btnDouble" title="Doppeltes Tempo">×2</button>
+      <button id="btnTap" title="Tempo tippen (T)">Tap</button>
+      <button id="btnMetro" title="Metronom-Klick an/aus (M)">♪</button>
+      <div class="beat-dots" id="beatDots"><i></i><i></i><i></i><i></i></div>
+      <div class="position" id="position">1 · 1</div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel library">
+      <div class="panel-head">
+        <h2>Patterns</h2>
+        <div class="head-actions">
+          <select id="presetSelect" title="Neues Pattern aus Vorlage"><option value="">+ Vorlage…</option></select>
+          <button id="btnAddPattern" title="Leeres Pattern">+</button>
+        </div>
+      </div>
+      <ul id="patternList" class="pattern-list"></ul>
+      <div class="panel-foot">
+        <button id="btnPatUp" title="Nach oben">↑</button>
+        <button id="btnPatDown" title="Nach unten">↓</button>
+        <button id="btnPatDup" title="Duplizieren">Duplizieren</button>
+        <button id="btnPatDel" class="danger" title="Löschen">Löschen</button>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-head">
+        <input id="patternName" class="pattern-name" spellcheck="false">
+        <label class="inline">Loop
+          <select id="loopBeats">
+            <option value="1">1 Beat</option><option value="2">2 Beats</option><option value="4">1 Takt (4)</option>
+            <option value="8">2 Takte (8)</option><option value="16">4 Takte (16)</option><option value="32">8 Takte (32)</option>
+          </select>
+        </label>
+        <span id="loopStatus" class="loop-status"></span>
+        <div class="spacer"></div>
+        <label class="inline"><input type="checkbox" id="ledLook" checked> LED-Ansicht</label>
+        <label class="inline"><input type="checkbox" id="showGrid"> Raster</label>
+      </div>
+
+      <div id="drawBar" class="draw-bar" hidden>
+        <div class="tools" id="drawTools">
+          <button data-tool="pen" title="Stift (P)">✎ Stift</button>
+          <button data-tool="erase" title="Radierer (E)">⌫ Radierer</button>
+          <button data-tool="line" title="Linie (L)">／ Linie</button>
+          <button data-tool="rect" title="Rechteck (R)">▭ Rechteck</button>
+          <button data-tool="ellipse" title="Ellipse (O)">◯ Ellipse</button>
+          <button data-tool="fill" title="Füllen (F)">▩ Füllen</button>
+          <button data-tool="pick" title="Pipette (I)">⊙ Pipette</button>
+        </div>
+        <input type="color" id="drawColor" value="#ffffff" title="Zeichenfarbe">
+        <label class="inline">Größe <select id="drawSize"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select></label>
+        <label class="inline"><input type="checkbox" id="drawFilled"> gefüllt</label>
+        <label class="inline"><input type="checkbox" id="drawMirror"> spiegeln</label>
+        <button id="btnClearDraw" class="danger">Ebene leeren</button>
+      </div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="preview"></canvas>
+      </div>
+
+      <div class="timeline-wrap">
+        <canvas id="timeline" height="34"></canvas>
+      </div>
+      <div class="hint" id="stageHint">Leertaste: Play/Pause · T: Tap-Tempo · M: Metronom · Klick in die Zeitleiste: Position · ⌘Z / ⇧⌘Z: Rückgängig / Wiederholen</div>
+    </section>
+
+    <aside class="panel layers-panel">
+      <div class="panel-head">
+        <h2>Ebenen</h2>
+        <div class="head-actions">
+          <select id="addLayerSelect"><option value="">+ Ebene…</option></select>
+        </div>
+      </div>
+      <ul id="layerList" class="layer-list"></ul>
+      <div class="panel-foot">
+        <button id="btnLayerUp" title="Nach oben">↑</button>
+        <button id="btnLayerDown" title="Nach unten">↓</button>
+        <button id="btnLayerDup" title="Duplizieren">Duplizieren</button>
+        <button id="btnLayerDel" class="danger" title="Löschen">Löschen</button>
+      </div>
+      <div id="inspector" class="inspector"></div>
+    </aside>
+  </main>
+
+  <dialog id="exportDialog">
+    <form method="dialog">
+      <h2>Export für die Wand</h2>
+      <p class="muted">Alle Patterns werden auf eine Referenz-BPM gerendert und nach <b>Beat-Position</b> abgelegt. Der Pico&nbsp;2W bestimmt beim Abspielen die echte Geschwindigkeit: <code>frame = floor(beat · framesPerBeat) mod frameCount</code>.</p>
+      <div class="grid2">
+        <label>Referenz-BPM <input id="expBpm" type="number" min="20" max="300" step="0.1"></label>
+        <label>FPS bei Referenz-BPM <input id="expFps" type="number" min="5" max="120" step="1" value="30"></label>
+        <label>Pixelformat
+          <select id="expFormat"><option value="rgb888">RGB888 (3 Byte/Pixel)</option><option value="rgb565">RGB565 (2 Byte/Pixel)</option></select>
+        </label>
+        <label>Frames pro Beat <output id="expFpb">–</output></label>
+      </div>
+      <div id="expSummary" class="exp-summary"></div>
+      <progress id="expProgress" value="0" max="1" hidden></progress>
+      <div class="dialog-actions">
+        <button value="cancel">Abbrechen</button>
+        <button id="btnExportJson" type="button">Projekt-JSON (parametrisch)</button>
+        <button id="btnExportBank" type="button" class="accent">Bank exportieren (.lwb)</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog">
+    <form method="dialog">
+      <h2>Projekteinstellungen</h2>
+      <div class="grid2">
+        <label>Projektname <input id="setName" type="text"></label>
+        <label>Referenz-BPM <input id="setBpm" type="number" min="20" max="300" step="0.1"></label>
+        <label>Breite (Pixel) <input id="setW" type="number" min="1" max="256"></label>
+        <label>Höhe (Pixel) <input id="setH" type="number" min="1" max="256"></label>
+      </div>
+      <p class="muted">Eine kleine Wand hat 64 × 48 Pixel. Zeichnungen werden beim Ändern der Größe beschnitten bzw. aufgefüllt.</p>
+      <div class="dialog-actions">
+        <button value="cancel">Abbrechen</button>
+        <button id="btnSettingsOk" value="ok" class="accent">Übernehmen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/renderer.js"></script>
+  <script src="js/presets.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
