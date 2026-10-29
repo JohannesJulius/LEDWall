@@ -212,6 +212,7 @@
     out.height = Math.max(1, p.height | 0) || 48;
     out.refBpm = +p.refBpm || 120;
     out.patterns = (p.patterns || []).map(normalizePattern);
+    if (p.setup) out.setup = p.setup; // Raum-Setup, wird von setup.js geprüft
     return out;
   }
 

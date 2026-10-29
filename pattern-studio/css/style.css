@@ -150,3 +150,61 @@ body.native .native-only { display: block; }
 .upd-notes { background: var(--panel2); border-radius: 8px; padding: 8px 10px; max-height: 220px; overflow-y: auto;
   white-space: pre-wrap; font: 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; user-select: text; -webkit-user-select: text; }
 #btnUpdate[hidden] { display: none; }
+
+/* ---------- tabs / views */
+.tabs { display: flex; gap: 2px; background: var(--panel2); border-radius: 8px; padding: 2px; }
+.tabs button { border: 0; background: transparent; padding: 4px 14px; border-radius: 6px; color: var(--muted); }
+.tabs button.on { background: var(--accent2); color: #000; font-weight: 600; }
+.badge { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10px; line-height: 16px; }
+.badge[hidden] { display: none; }
+.view[hidden] { display: none !important; }
+.seg { display: inline-flex; gap: 2px; }
+.seg button.on { background: var(--accent2); border-color: var(--accent2); color: #000; }
+
+/* ---------- devices */
+.devices-view { flex: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+.devices-view > .panel { border-right: 1px solid var(--line); }
+.device-list { list-style: none; margin: 0; padding: 8px; overflow-y: auto; flex: 1; }
+.device-list li { padding: 10px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 8px; cursor: pointer; background: var(--panel2); }
+.device-list li.sel { outline: 1px solid var(--accent2); border-color: var(--accent2); }
+.device-list .dname { font-weight: 600; }
+.device-list .dsub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.device-list .dact { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.device-list .empty { border: 1px dashed var(--line); background: none; cursor: default; color: var(--muted); }
+.pill { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
+.pill.ok { background: rgba(61,220,132,.15); color: var(--ok); }
+.pill.warn { background: rgba(255,176,32,.15); color: var(--warn); }
+.pill.info { background: rgba(54,209,255,.15); color: var(--accent2); }
+.device-detail { overflow-y: auto; padding: 16px 24px 40px; }
+.device-detail h1 { font-size: 20px; margin: 0 0 4px; }
+.device-detail .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 14px 0; max-width: 860px; }
+.device-detail .card h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent2); }
+.device-detail .row { grid-template-columns: 170px minmax(0, 320px) auto; }
+.device-detail .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.panel-table { border-collapse: collapse; margin: 6px 0; }
+.panel-table td, .panel-table th { padding: 3px 6px; text-align: left; font-size: 12px; }
+.panel-table th { color: var(--muted); font-weight: normal; }
+.panel-table input[type=number] { width: 60px; }
+.panel-diagram { background: #000; border-radius: 6px; margin-top: 8px; }
+.wiring { border-collapse: collapse; font-size: 12px; }
+.wiring td { padding: 2px 10px 2px 0; }
+.wiring td:first-child { color: var(--muted); }
+.wiring-grid { display: flex; gap: 40px; flex-wrap: wrap; }
+
+/* ---------- room */
+.room-view { flex: 1; display: grid; grid-template-columns: 240px 1fr 320px; min-height: 0; }
+.room-view > .panel:first-child { border-right: 1px solid var(--line); }
+.room-view > .panel:last-child { border-left: 1px solid var(--line); }
+.room-settings { padding: 6px 10px 10px; border-bottom: 1px solid var(--line); }
+.room-settings .row, #wallInspector .row { grid-template-columns: 90px 1fr auto; }
+.wall-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+.wall-list li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; }
+.wall-list li:hover { background: var(--panel2); }
+.wall-list li.sel { background: #2b3040; outline: 1px solid var(--accent2); }
+.wall-list .addr { color: var(--muted); font-size: 11px; }
+.room-stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 10px 14px; gap: 8px; }
+.room-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.room-canvas-wrap { flex: 1; min-height: 0; position: relative; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+#roomCanvas { width: 100%; height: 100%; display: block; }
+.xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.xyz input { width: 100%; }

@@ -18,7 +18,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web"
 echo "== Kompilieren ($VERSION)"
 for ARCH in arm64 x86_64; do
   xcrun swiftc -O -swift-version 5 -target "$ARCH-apple-macos12.0" \
-    -framework Cocoa -framework WebKit -framework CryptoKit \
+    -framework Cocoa -framework WebKit -framework CryptoKit -framework IOKit \
     Sources/*.swift -o "$OUT/LEDPatternStudio-$ARCH"
 done
 lipo -create -output "$APP/Contents/MacOS/LEDPatternStudio" "$OUT"/LEDPatternStudio-*
@@ -26,6 +26,17 @@ lipo -create -output "$APP/Contents/MacOS/LEDPatternStudio" "$OUT"/LEDPatternStu
 echo "== Bundle"
 sed -e "s/__VERSION__/$VERSION/g" -e "s#__REPO__#$REPO#g" Info.plist > "$APP/Contents/Info.plist"
 cp -R ../pattern-studio/index.html ../pattern-studio/css ../pattern-studio/js "$APP/Contents/Resources/web/"
+
+# Empfänger-Firmware einbetten (FIRMWARE_UF2=Pfad zur .uf2, z. B. aus dem Firmware-Build)
+FW_UF2="${FIRMWARE_UF2:-../firmware/receiver/build/ledwall-receiver.uf2}"
+if [ -f "$FW_UF2" ]; then
+  mkdir -p "$APP/Contents/Resources/firmware"
+  cp "$FW_UF2" "$APP/Contents/Resources/firmware/ledwall-receiver.uf2"
+  tr -d ' \r\n' < ../firmware/receiver/VERSION > "$APP/Contents/Resources/firmware/version.txt"
+  echo "Firmware $(cat "$APP/Contents/Resources/firmware/version.txt") eingebettet"
+else
+  echo "WARNUNG: keine Empfänger-Firmware gefunden ($FW_UF2) – Aufspielen in der App nicht möglich"
+fi
 
 ICONSET="$OUT/AppIcon.iconset"
 mkdir -p "$ICONSET"

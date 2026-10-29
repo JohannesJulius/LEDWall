@@ -1,0 +1,37 @@
+# Baut die Empfänger-Firmware (RP2040 Zero). Wird von mac-build.yml und release.yml
+# aufgerufen, damit die App die passende .uf2 mitbringt.
+name: Firmware
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  receiver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Werkzeuge installieren
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-none-eabi libnewlib-arm-none-eabi cmake ninja-build
+
+      - name: Pico SDK holen
+        run: |
+          git clone -q --depth 1 -b 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb
+
+      - name: Host-Tests
+        run: ./firmware/receiver/test/run.sh
+
+      - name: Firmware bauen
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+        run: |
+          cmake -S firmware/receiver -B firmware/receiver/build -G Ninja
+          cmake --build firmware/receiver/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: receiver-firmware
+          path: firmware/receiver/build/ledwall-receiver.uf2
+          retention-days: 14

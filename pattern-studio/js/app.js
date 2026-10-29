@@ -24,6 +24,7 @@
     draw: { tool: 'pen', color: '#ffffff', size: 1, filled: false, mirror: false },
     collapsed: new Set(['Bewegung']),
     fileHandle: null,
+    view: 'patterns',
   };
 
   const pattern = () => state.project.patterns[state.cur] || null;
@@ -100,6 +101,10 @@
       if (r) { nativePending.delete(id); r(res || {}); }
     },
     updateState(s) { onUpdateState(s); },
+    // Geräte (devices.js)
+    devices(list, fw) { if (window.LEDDevices) window.LEDDevices.onDevices(list, fw); },
+    deviceLine(port, line) { if (window.LEDDevices) window.LEDDevices.onLine(port, line); },
+    flashResult(r) { if (window.LEDDevices) window.LEDDevices.onFlash(r); },
   };
 
   // ------------------------------------------------------------------ persistence & undo
@@ -121,6 +126,7 @@
   function restoreSnap(s) {
     const o = JSON.parse(s);
     state.project = o.project;
+    state.project.setup = window.LEDSetup.normalizeSetup(state.project.setup);
     state.cur = Math.min(o.cur, state.project.patterns.length - 1);
     state.sel = o.sel;
     renderAll();
@@ -702,6 +708,7 @@
   // ------------------------------------------------------------------ main loop
 
   let lastTs = 0, lastBeatInt = -1, lastThumb = 0;
+  const frameHooks = [];
   const dots = $('beatDots').children;
 
   function frame(ts) {
@@ -722,9 +729,14 @@
       dots[i].classList.toggle('down', i === 0);
     }
     $('position').textContent = 'Takt ' + (Math.floor(lb / 4) + 1) + ' · ' + (Math.floor(lb % 4) + 1);
-    if (img) drawPreview(lb);
-    drawTimeline(lb);
-    if (ts - lastThumb > 120) { renderThumbs(); lastThumb = ts; }
+    if (state.view === 'patterns') {
+      if (img) drawPreview(lb);
+      drawTimeline(lb);
+      if (ts - lastThumb > 120) { renderThumbs(); lastThumb = ts; }
+    }
+    for (const hook of frameHooks) {
+      try { hook(ts, lb); } catch (e) { console.error(e); }
+    }
     requestAnimationFrame(frame);
   }
 
@@ -931,6 +943,7 @@
 
   function loadProjectObject(obj, handle) {
     state.project = R.normalizeProject(obj);
+    state.project.setup = window.LEDSetup.normalizeSetup(state.project.setup);
     state.cur = 0;
     state.sel = pattern() ? pattern().layers.length - 1 : -1;
     state.fileHandle = handle || null;
@@ -1158,9 +1171,39 @@
     snapshot: () => { commitUndo(); return JSON.stringify(state.project); },
   };
 
+  // ------------------------------------------------------------------ Ansichten (Patterns / Geräte / Raum)
+
+  const viewHooks = [];
+
+  function setView(v) {
+    state.view = v;
+    for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.view === v);
+    $('patternsView').hidden = v !== 'patterns';
+    $('devicesView').hidden = v !== 'devices';
+    $('roomView').hidden = v !== 'room';
+    for (const h of viewHooks) h(v);
+    if (v === 'patterns') resizePreview();
+  }
+
+  // Schnittstelle für devices.js und room.js
+  window.LEDApp = {
+    NATIVE,
+    el, toast, nativePost, fmtSpeed,
+    project: () => state.project,
+    pattern,
+    patternIndex: () => state.cur,
+    beat: () => state.beat,
+    view: () => state.view,
+    changed: (opts) => changed(opts),
+    onFrame: (fn) => frameHooks.push(fn),
+    onView: (fn) => viewHooks.push(fn),
+    selectPattern: (i) => selectPattern(i),
+  };
+
   // ------------------------------------------------------------------ render all
 
   function renderAll() {
+    if (window.LEDRoom) window.LEDRoom.refresh();
     renderLibrary();
     renderStageHead();
     renderLayers();
@@ -1206,9 +1249,11 @@
       drawDemo.layers[1].params.pixels = smileyBitmap(state.project.width, state.project.height);
       state.project.patterns.push(drawDemo);
     }
+    state.project.setup = window.LEDSetup.normalizeSetup(state.project.setup);
     state.sel = pattern() ? pattern().layers.length - 1 : -1;
     setBpm(state.project.refBpm);
     commitUndo();
+    for (const b of $('tabs').children) b.onclick = () => setView(b.dataset.view);
 
     $('btnNew').onclick = newProject;
     $('btnOpen').onclick = openProject;
@@ -1341,7 +1386,7 @@
       if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); if (document.activeElement) document.activeElement.blur(); }
       else if (k === 't') tap();
       else if (k === 'm') toggleMetronome();
-      else if (isDrawLayer()) {
+      else if (state.view === 'patterns' && isDrawLayer()) {
         const tools = { p: 'pen', b: 'pen', e: 'erase', l: 'line', r: 'rect', o: 'ellipse', f: 'fill', i: 'pick' };
         if (tools[k]) setTool(tools[k]);
       }

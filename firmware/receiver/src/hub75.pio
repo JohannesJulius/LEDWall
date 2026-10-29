@@ -1,0 +1,22 @@
+; HUB75-Ansteuerung (eigene Programme, angelehnt an pico-examples/pio/hub75)
+
+; Schiebt eine Zeile in die Panels: pro Spalte ein Byte mit R0 G0 B0 R1 G1 B1 (Bit 0..5).
+; OUT-Pins: 6 Farbpins, Side-Set: CLK. Autopull 32 Bit, rechts schieben.
+.program hub75_data
+.side_set 1
+.wrap_target
+    out pins, 6     side 0
+    out null, 2     side 1
+.wrap
+
+; Zeile auswählen, Latch-Puls, dann OE für die gewünschte Zeit einschalten.
+; OUT-Pins: Adresse A..E, Side-Set: LAT (Bit 0) und OE (Bit 1, aktiv low).
+; FIFO-Wort: Bit 0..4 Zeile, Bit 5..31 Leuchtdauer in Takten.
+.program hub75_row
+.side_set 2
+.wrap_target
+    out pins, 5     [2] side 0b10
+    out x, 27       [2] side 0b11
+pulse:
+    jmp x-- pulse       side 0b00
+.wrap
