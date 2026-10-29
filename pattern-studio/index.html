@@ -9,6 +9,11 @@
 <body>
   <header class="topbar">
     <div class="brand">LED&nbsp;Pattern&nbsp;Studio</div>
+    <nav class="tabs" id="tabs">
+      <button data-view="patterns" class="on">Patterns</button>
+      <button data-view="devices">Geräte <span id="deviceBadge" class="badge" hidden></span></button>
+      <button data-view="room">Raum</button>
+    </nav>
     <div class="file-actions">
       <button id="btnNew" title="Neues Projekt">Neu</button>
       <button id="btnOpen" title="Projekt öffnen (⌘O)">Öffnen</button>
@@ -33,7 +38,7 @@
     </div>
   </header>
 
-  <main class="layout">
+  <main class="layout view" id="patternsView">
     <aside class="panel library">
       <div class="panel-head">
         <h2>Patterns</h2>
@@ -111,6 +116,51 @@
     </aside>
   </main>
 
+  <main class="view devices-view" id="devicesView" hidden>
+    <aside class="panel">
+      <div class="panel-head"><h2>Angeschlossen</h2><button id="btnDevRescan" title="Neu suchen">↻</button></div>
+      <ul id="deviceList" class="device-list"></ul>
+      <div class="panel-foot muted" id="fwInfo" style="font-size:11px"></div>
+    </aside>
+    <section class="device-detail" id="deviceDetail"></section>
+  </main>
+
+  <main class="view room-view" id="roomView" hidden>
+    <aside class="panel">
+      <div class="panel-head"><h2>Raum</h2></div>
+      <div class="room-settings" id="roomSettings"></div>
+      <div class="panel-head"><h2>Wände</h2>
+        <div class="head-actions"><button id="btnWallAdd" title="Wand hinzufügen">+</button></div>
+      </div>
+      <ul id="wallList" class="wall-list"></ul>
+      <div class="panel-foot">
+        <button id="btnWallDup">Duplizieren</button>
+        <button id="btnWallDel" class="danger">Löschen</button>
+      </div>
+    </aside>
+    <section class="room-stage">
+      <div class="room-toolbar">
+        <div class="seg" id="tfMode">
+          <button data-mode="translate" class="on" title="Verschieben (W)">✥ Verschieben</button>
+          <button data-mode="rotate" title="Drehen (E)">⟳ Drehen</button>
+        </div>
+        <label class="inline"><input type="checkbox" id="roomSnap" checked> Einrasten (5 cm / 15°)</label>
+        <div class="spacer"></div>
+        <div class="seg" id="camViews">
+          <button data-cam="persp">Perspektive</button>
+          <button data-cam="front">Vorne</button>
+          <button data-cam="top">Oben</button>
+        </div>
+      </div>
+      <div class="room-canvas-wrap" id="roomWrap"><canvas id="roomCanvas"></canvas></div>
+      <div class="hint">Ziehen: drehen · Rechtsklick/zwei Finger: verschieben · Scrollen: zoomen · Klick auf eine Wand: auswählen</div>
+    </section>
+    <aside class="panel">
+      <div class="panel-head"><h2>Ausgewählte Wand</h2></div>
+      <div id="wallInspector" class="inspector"></div>
+    </aside>
+  </main>
+
   <dialog id="exportDialog">
     <form method="dialog">
       <h2>Export für die Wand</h2>
@@ -173,6 +223,13 @@
 
   <script src="js/renderer.js"></script>
   <script src="js/presets.js"></script>
+  <script src="js/protocol.js"></script>
+  <script src="js/setup.js"></script>
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/vendor/OrbitControls.js"></script>
+  <script src="js/vendor/TransformControls.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/devices.js"></script>
+  <script src="js/room.js"></script>
 </body>
 </html>

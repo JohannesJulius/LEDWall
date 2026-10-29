@@ -1,0 +1,12 @@
+; Status-LED (WS2812 auf GP16 des RP2040 Zero)
+.program ws2812
+.side_set 1
+.wrap_target
+bitloop:
+    out x, 1        side 0 [3]
+    jmp !x do_zero  side 1 [2]
+do_one:
+    jmp bitloop     side 1 [2]
+do_zero:
+    nop             side 0 [2]
+.wrap

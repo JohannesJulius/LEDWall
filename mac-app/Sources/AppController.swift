@@ -15,6 +15,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var window: NSWindow!
     private var webView: WKWebView!
     private let updater = Updater()
+    private let devices = DeviceManager()
     private var currentFile: URL?
     private var pageReady = false
 
@@ -33,6 +34,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
         buildWindow()
         updater.onChange = { [weak self] st in self?.pushUpdateState(st) }
         updater.startAutoCheck()
+        devices.onChange = { [weak self] list, fw in self?.pushDevices(list, fw) }
+        devices.onLine = { [weak self] port, line in
+            self?.callJS("deviceLine", [port, line])
+        }
+        devices.onFlash = { [weak self] volume, ok, err in
+            self?.callJS("flashResult", [["volume": volume, "ok": ok, "error": err]])
+        }
+        devices.start()
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -206,6 +215,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
             case "autoCheck": updater.autoCheck = body["value"] as? Bool ?? true
             default: pushUpdateState(updater.state)
             }
+        case "device":
+            let port = body["port"] as? String ?? ""
+            switch body["action"] as? String ?? "" {
+            case "send": devices.send(port: port, text: body["text"] as? String ?? "")
+            case "frame":
+                if let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) { devices.sendFrame(port: port, data: d) }
+            case "flash": devices.flash(volume: body["volume"] as? String ?? "")
+            case "touch1200": devices.touch1200(port: port)
+            default: devices.pushState()
+            }
         case "openURL":
             if let s = body["url"] as? String, let url = URL(string: s), url.scheme == "https" {
                 NSWorkspace.shared.open(url)
@@ -219,6 +238,20 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: data, encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.__native && window.__native.reply(\(id), \(s))", completionHandler: nil)
+    }
+
+    private func pushDevices(_ list: [DeviceManager.Device], _ fw: DeviceManager.Firmware) {
+        guard pageReady,
+              let l = try? JSONEncoder().encode(list), let ls = String(data: l, encoding: .utf8),
+              let f = try? JSONEncoder().encode(fw), let fs = String(data: f, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.__native && window.__native.devices(\(ls), \(fs))", completionHandler: nil)
+    }
+
+    // window.__native.<fn>(args...) mit JSON-kodierten Argumenten aufrufen
+    private func callJS(_ fn: String, _ args: [Any]) {
+        guard pageReady, let d = try? JSONSerialization.data(withJSONObject: args),
+              let s = String(data: d, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.__native && window.__native.\(fn).apply(null, \(s))", completionHandler: nil)
     }
 
     private func pushUpdateState(_ st: Updater.State) {
@@ -315,6 +348,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageReady = true
         pushUpdateState(updater.state)
+        devices.pushState()
     }
 
     // Links nach außen im Standardbrowser öffnen

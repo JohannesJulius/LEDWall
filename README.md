@@ -12,7 +12,13 @@ Modulare LED-Wand aus kleinen 64 × 48-Pixel-Wänden.
 
 - **Pico 2W:** Zentrale. Er hält die Pattern-Bank, bestimmt BPM und Beat-Position und
   schickt jeder Wand, was sie zeigen soll.
-- **RP2040 Zero** (einer pro Wand): steuert die Pixel seiner 64 × 48-Wand an.
+- **RP2040 Zero** (einer pro Wand): steuert die HUB75-Panels seiner 64 × 48-Wand an und
+  versteht die Pakete vom Sender. Eingerichtet wird er in der App (Tab **Geräte**), siehe
+  [docs/receiver.md](docs/receiver.md).
+
+Die App hat drei Bereiche: **Patterns** (erstellen mit BPM-Vorschau), **Geräte** (Empfänger
+erkennen, Firmware aufspielen, Adresse und Panels einstellen, Live-Vorschau über USB) und
+**Raum** (das Setup in 3D nachbauen und im Projekt speichern).
 
 ## LED Pattern Studio installieren (Mac)
 
@@ -38,8 +44,9 @@ Benötigt macOS 12 oder neuer. Läuft nativ auf Apple Silicon und Intel.
 3. Committen und auf `main` pushen.
 
 GitHub baut daraufhin die App (`.github/workflows/release.yml`), legt den Tag `v1.1.0` an und
-veröffentlicht `LED-Pattern-Studio.dmg`, `LED-Pattern-Studio-mac.zip` (für den Updater) und
-`SHA256SUMS.txt`. Installierte Apps finden das Update automatisch.
+veröffentlicht `LED-Pattern-Studio.dmg`, `LED-Pattern-Studio-mac.zip` (für den Updater),
+`ledwall-receiver.uf2` und `SHA256SUMS.txt`. Die Empfänger-Firmware wird dabei mitgebaut
+und in die App eingebettet. Ihre Version steht in `firmware/receiver/VERSION`. Installierte Apps finden das Update automatisch.
 
 > Wie bei MakerDash muss das Repository **öffentlich** sein, damit die App Updates ohne
 > Anmeldung abrufen kann.
@@ -55,6 +62,9 @@ dann unter **Actions → Lauf → Artifacts**. Lokal auf dem Mac geht es mit
 | [`pattern-studio/`](pattern-studio/) | Editor zum Erstellen von Patterns mit Live-Vorschau und BPM-Vorschau (Web-Oberfläche) |
 | [`mac-app/`](mac-app/) | Mac-App um den Editor (Swift + WebKit) mit eingebautem Updater, Build-Skript |
 | [`release-notes/`](release-notes/) | Beschreibungen der einzelnen Versionen |
+| [`firmware/receiver/`](firmware/receiver/) | Empfänger-Firmware für den RP2040 Zero (C, Pico SDK), wird in die App eingebettet |
+| [`docs/receiver.md`](docs/receiver.md) | Verkabelung und Einrichtung des Empfängers |
+| [`docs/protocol.md`](docs/protocol.md) | Protokoll Sender → Empfänger und USB-Befehle |
 | [`docs/lwb-format.md`](docs/lwb-format.md) | Dateiformat der exportierten Pattern-Bank und wie der 2W sie abspielt |
 
-Die Firmware für den Pico 2W und die RP2040 Zeros folgt als Nächstes.
+Die Firmware für den Sender (Pico 2W) folgt als Nächstes.

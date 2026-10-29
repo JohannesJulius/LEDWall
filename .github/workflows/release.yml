@@ -13,10 +13,19 @@ permissions:
   contents: write
 
 jobs:
+  firmware:
+    uses: ./.github/workflows/firmware.yml
+
   release:
+    needs: firmware
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: receiver-firmware
+          path: fw
 
       - name: Version bestimmen
         id: v
@@ -36,12 +45,16 @@ jobs:
 
       - name: App bauen
         if: steps.v.outputs.skip != 'true'
+        env:
+          FIRMWARE_UF2: ${{ github.workspace }}/fw/ledwall-receiver.uf2
         run: ./mac-app/build.sh "${{ steps.v.outputs.version }}" "${{ github.repository }}"
 
       - name: Prüfsummen
         if: steps.v.outputs.skip != 'true'
         working-directory: mac-app/build
-        run: shasum -a 256 LED-Pattern-Studio.dmg LED-Pattern-Studio-mac.zip > SHA256SUMS.txt
+        run: |
+          cp ../../fw/ledwall-receiver.uf2 .
+          shasum -a 256 LED-Pattern-Studio.dmg LED-Pattern-Studio-mac.zip ledwall-receiver.uf2 > SHA256SUMS.txt
 
       - name: Release veröffentlichen
         if: steps.v.outputs.skip != 'true'
@@ -53,5 +66,6 @@ jobs:
           gh release create "v$V" \
             mac-app/build/LED-Pattern-Studio.dmg \
             mac-app/build/LED-Pattern-Studio-mac.zip \
+            mac-app/build/ledwall-receiver.uf2 \
             mac-app/build/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "LED Pattern Studio $V" "${NOTES[@]}"
