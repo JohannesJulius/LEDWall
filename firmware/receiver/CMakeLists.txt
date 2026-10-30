@@ -15,13 +15,15 @@ add_executable(ledwall_receiver
     src/hub75.c
     src/display.c
     src/config.c
-    src/protocol.c
+    ../common/protocol.c
     src/status_led.c
 )
 set_target_properties(ledwall_receiver PROPERTIES OUTPUT_NAME ledwall-receiver)
 
 pico_generate_pio_header(ledwall_receiver ${CMAKE_CURRENT_LIST_DIR}/src/hub75.pio)
 pico_generate_pio_header(ledwall_receiver ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
+
+target_include_directories(ledwall_receiver PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../common)
 
 target_compile_definitions(ledwall_receiver PRIVATE
     FW_VERSION="${FW_VERSION}"

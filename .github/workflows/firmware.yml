@@ -1,5 +1,5 @@
-# Baut die Empfänger-Firmware (RP2040 Zero). Wird von mac-build.yml und release.yml
-# aufgerufen, damit die App die passende .uf2 mitbringt.
+# Baut die Firmware für Empfänger (RP2040 Zero) und Sender (Pico 2W). Wird von mac-build.yml
+# und release.yml aufgerufen, damit die App die passenden .uf2 mitbringt.
 name: Firmware
 
 on:
@@ -18,20 +18,35 @@ jobs:
       - name: Pico SDK holen
         run: |
           git clone -q --depth 1 -b 2.1.1 https://github.com/raspberrypi/pico-sdk.git "$RUNNER_TEMP/pico-sdk"
-          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver lib/lwip
 
       - name: Host-Tests
-        run: ./firmware/receiver/test/run.sh
+        run: |
+          ./firmware/receiver/test/run.sh
+          ./firmware/sender/test/run.sh
 
-      - name: Firmware bauen
+      - name: Empfänger bauen
         env:
           PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
         run: |
           cmake -S firmware/receiver -B firmware/receiver/build -G Ninja
           cmake --build firmware/receiver/build
 
+      - name: Sender bauen
+        env:
+          PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+        run: |
+          cmake -S firmware/sender -B firmware/sender/build -G Ninja
+          cmake --build firmware/sender/build
+          # Programm muss vor dem Bank-Bereich (1 MB) enden
+          SIZE=$(arm-none-eabi-size -A firmware/sender/build/ledwall-sender.elf | awk '$1==".text"||$1==".rodata"||$1==".data"||$1==".binary_info"{s+=$2} END{print s}')
+          echo "Sender-Programm: $SIZE Byte"
+          test "$SIZE" -lt 1000000
+
       - uses: actions/upload-artifact@v4
         with:
           name: receiver-firmware
-          path: firmware/receiver/build/ledwall-receiver.uf2
+          path: |
+            firmware/receiver/build/ledwall-receiver.uf2
+            firmware/sender/build/ledwall-sender.uf2
           retention-days: 14

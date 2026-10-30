@@ -21,6 +21,7 @@
       width: 64,
       height: 48,
       pitch: 4,            // Pixelabstand in mm
+      channel: 0,          // Ausgang am Sender (0 = GP0, 1 = GP4)
       pos: { x: 0, y: 1.2, z: 0 },
       rot: { x: 0, y: 0, z: 0 },
     }, overrides || {});
@@ -45,6 +46,7 @@
           width: Math.max(1, Math.round(num(w.width, 64))),
           height: Math.max(1, Math.round(num(w.height, 48))),
           pitch: Math.max(0.5, num(w.pitch, 4)),
+          channel: w.channel === 1 ? 1 : 0,
           pos: { x: num(w.pos && w.pos.x, 0), y: num(w.pos && w.pos.y, 1.2), z: num(w.pos && w.pos.z, 0) },
           rot: { x: num(w.rot && w.rot.x, 0), y: num(w.rot && w.rot.y, 0), z: num(w.rot && w.rot.z, 0) },
           id: w.id || base.id,
@@ -122,5 +124,27 @@
     return out;
   }
 
-  return { makeWall, defaultSetup, normalizeSetup, wallSize, spanLayout, renderWalls };
+  /*
+   * Geometrie für den Bank-Export: Leinwandgröße und pro Wand der Ausschnitt.
+   * Ohne Wände: nur die Leinwand (W x H des Projekts), Bilder gehen an alle Wände.
+   */
+  function bankGeometry(project) {
+    const setup = project.setup;
+    if (!setup || !setup.walls.length) return { width: project.width, height: project.height, walls: [], mode: 'copy' };
+    if (setup.mode === 'span') {
+      const L = spanLayout(setup);
+      return {
+        width: L.W, height: L.H, mode: 'span',
+        walls: setup.walls.map((w) => ({ address: w.address, channel: w.channel, width: w.width, height: w.height, name: w.name, region: L.regions[w.id] })),
+      };
+    }
+    const first = setup.walls[0];
+    return {
+      width: first.width, height: first.height, mode: 'copy',
+      walls: setup.walls.map((w) => ({ address: w.address, channel: w.channel, width: w.width, height: w.height, name: w.name,
+        region: { x: 0, y: 0, w: first.width, h: first.height } })),
+    };
+  }
+
+  return { makeWall, defaultSetup, normalizeSetup, wallSize, spanLayout, renderWalls, bankGeometry };
 });

@@ -21,14 +21,20 @@ final class DeviceManager {
         var serial: String?
     }
 
-    struct Firmware: Codable {
+    struct FirmwareFile: Codable {
         var version: String
         var available: Bool
+    }
+
+    struct Firmware: Codable {
+        var receiver: FirmwareFile   // RP2040 Zero
+        var sender: FirmwareFile     // Pico 2W (RP2350)
     }
 
     var onChange: (([Device], Firmware) -> Void)?
     var onLine: ((String, String) -> Void)?           // port, Zeile
     var onFlash: ((String, Bool, String) -> Void)?    // Laufwerk, ok, Fehler
+    var onUpload: ((String, Int, Int, String, String) -> Void)? // port, gesendet, gesamt, Zustand, Fehler
 
     private(set) var devices: [Device] = []
     private var connections: [String: SerialConnection] = [:]
@@ -36,16 +42,27 @@ final class DeviceManager {
     private var flashing = Set<String>()
 
     static let receiverProduct = "LEDWall-Receiver"
+    static let senderProduct = "LEDWall-Sender"
     static let rpiVendor = 0x2E8A
 
-    let firmwareURL = Bundle.main.resourceURL?.appendingPathComponent("firmware/ledwall-receiver.uf2")
-    lazy var firmware: Firmware = {
-        let v = Bundle.main.resourceURL
-            .flatMap { try? String(contentsOf: $0.appendingPathComponent("firmware/version.txt"), encoding: .utf8) }?
+    private static func fwURL(_ name: String) -> URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("firmware/" + name)
+    }
+
+    private static func fwFile(_ uf2: String, _ versionFile: String) -> FirmwareFile {
+        let v = fwURL(versionFile).flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let ok = firmwareURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
-        return Firmware(version: v, available: ok && !v.isEmpty)
-    }()
+        let ok = fwURL(uf2).map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        return FirmwareFile(version: v, available: ok && !v.isEmpty)
+    }
+
+    lazy var firmware = Firmware(receiver: Self.fwFile("ledwall-receiver.uf2", "version.txt"),
+                                 sender: Self.fwFile("ledwall-sender.uf2", "sender-version.txt"))
+
+    // Bank-Upload zum Sender: 4-KB-Blöcke, jeder wird mit "ACK n" quittiert
+    private struct Upload { var data: Data; var sent: Int }
+    private var uploads: [String: Upload] = [:]
+    static let uploadChunk = 4096
 
     func start() {
         scan()
@@ -57,23 +74,23 @@ final class DeviceManager {
     func scan() {
         var found: [Device] = []
         for p in serialPorts() where p.vendor == Self.rpiVendor {
-            let isReceiver = p.product == Self.receiverProduct
-            found.append(Device(id: p.path, kind: isReceiver ? "receiver" : "rp2040", port: p.path,
-                                board: nil, product: p.product, serial: p.serial))
+            let kind = p.product == Self.receiverProduct ? "receiver" : p.product == Self.senderProduct ? "sender" : "rp2040"
+            found.append(Device(id: p.path, kind: kind, port: p.path, board: nil, product: p.product, serial: p.serial))
         }
         for v in bootselVolumes() {
             found.append(Device(id: v.path, kind: "bootsel", volume: v.path, board: v.board))
         }
 
-        // Verbindungen zu neuen Empfängern öffnen, verschwundene schließen
-        let receiverPorts = Set(found.filter { $0.kind == "receiver" }.compactMap { $0.port })
+        // Verbindungen zu neuen Empfängern/Sendern öffnen, verschwundene schließen
+        let receiverPorts = Set(found.filter { $0.kind == "receiver" || $0.kind == "sender" }.compactMap { $0.port })
         for (port, conn) in connections where !receiverPorts.contains(port) {
             conn.close()
             connections[port] = nil
+            if uploads.removeValue(forKey: port) != nil { onUpload?(port, 0, 0, "error", "Gerät getrennt") }
         }
         for port in receiverPorts where connections[port] == nil {
             let conn = SerialConnection(path: port)
-            conn.onLine = { [weak self] line in self?.onLine?(port, line) }
+            conn.onLine = { [weak self] line in self?.handleLine(port, line) }
             conn.onClose = { [weak self] in self?.connections[port] = nil }
             if conn.open() {
                 connections[port] = conn
@@ -149,8 +166,39 @@ final class DeviceManager {
         }
     }
 
+    private func handleLine(_ port: String, _ line: String) {
+        if var up = uploads[port] {
+            if line == "READY" || line.hasPrefix("ACK ") {
+                if line.hasPrefix("ACK ") { up.sent = Int(line.dropFirst(4)) ?? up.sent }
+                uploads[port] = up
+                onUpload?(port, up.sent, up.data.count, "sending", "")
+                if up.sent < up.data.count {
+                    let end = min(up.sent + Self.uploadChunk, up.data.count)
+                    connections[port]?.sendData(up.data.subdata(in: up.sent..<end))
+                }
+                return
+            }
+            if line == "OK" || line.hasPrefix("ERR") {
+                uploads[port] = nil
+                onUpload?(port, up.data.count, up.data.count, line == "OK" ? "done" : "error", line == "OK" ? "" : String(line.dropFirst(4)))
+                return
+            }
+        }
+        onLine?(port, line)
+    }
+
+    func upload(port: String, data: Data, crc: UInt32) {
+        guard let conn = connections[port] else { onUpload?(port, 0, data.count, "error", "nicht verbunden"); return }
+        uploads[port] = Upload(data: data, sent: 0)
+        onUpload?(port, 0, data.count, "starting", "")
+        conn.send("UPLOAD \(data.count) \(crc)\n")
+    }
+
     func flash(volume: String) {
-        guard let src = firmwareURL, firmware.available else {
+        let board = devices.first(where: { $0.volume == volume })?.board ?? "RP2040"
+        let isSender = board == "RP2350"
+        let file = isSender ? firmware.sender : firmware.receiver
+        guard let src = Self.fwURL(isSender ? "ledwall-sender.uf2" : "ledwall-receiver.uf2"), file.available else {
             onFlash?(volume, false, "Firmware fehlt in der App")
             return
         }
@@ -238,6 +286,10 @@ final class SerialConnection {
 
     func send(_ text: String) {
         write(Data(text.utf8))
+    }
+
+    func sendData(_ data: Data) {
+        write(data)
     }
 
     // Bilder für die Live-Vorschau: ist das vorige noch unterwegs, wird dieses verworfen

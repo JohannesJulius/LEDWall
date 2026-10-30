@@ -14,7 +14,9 @@
 
   const st = {
     devices: [],          // vom DeviceManager
-    firmware: { version: '', available: false },
+    firmware: { receiver: { version: '', available: false }, sender: { version: '', available: false } },
+    patterns: {},         // Sender-Port -> Patternliste
+    upload: {},           // Sender-Port -> { sent, total, state, error }
     info: {},             // port -> INFO-Objekt der Firmware
     edit: {},             // port -> bearbeitete Einstellungen (noch nicht übertragen)
     dirty: {},            // port -> true, wenn edit vom Gerät abweicht
@@ -64,6 +66,8 @@
   }
 
   const receivers = () => st.devices.filter((d) => d.kind === 'receiver');
+  const fwR = () => st.firmware.receiver || {};
+  const fwS = () => st.firmware.sender || {};
   const selected = () => st.devices.find((d) => d.id === st.sel) || null;
 
   function wallFor(info) {
@@ -98,7 +102,7 @@
     }
     // neues BOOTSEL-Laufwerk, nachdem wir ein Update angestoßen haben -> sofort beschreiben
     for (const d of st.devices) {
-      if (d.kind === 'bootsel' && d.board === 'RP2040' && !before.has(d.id) && Date.now() < st.pendingFlash) {
+      if (d.kind === 'bootsel' && !before.has(d.id) && Date.now() < st.pendingFlash) {
         st.pendingFlash = 0;
         flash(d.volume);
       }
@@ -116,6 +120,24 @@
   }
 
   function onLine(port, line) {
+    if (line.startsWith('STATE ')) { // Sender: Zustand mit Patternliste
+      try {
+        const s2 = JSON.parse(line.slice(6));
+        st.patterns[port] = s2.patterns || [];
+        line = 'INFO ' + JSON.stringify(s2);
+      } catch (e) { return; }
+    }
+    if (line.startsWith('INFO ') && line.includes('"ledwall-tx"')) {
+      try {
+        const info = JSON.parse(line.slice(5));
+        const first = !st.info[port];
+        st.info[port] = info;
+        if (first) send(port, 'PATTERNS');
+        renderList();
+        if (selected() && selected().port === port) { if (first) renderDetail(); else updateSender(port); }
+      } catch (e) { /* unvollständig */ }
+      return;
+    }
     if (line.startsWith('INFO ')) {
       try {
         const info = JSON.parse(line.slice(5));
@@ -142,8 +164,17 @@
     renderList();
   }
 
+  function onUpload(port, sent, total, state, error) {
+    st.upload[port] = { sent, total, state, error };
+    if (state === 'done') { A.toast('Bank auf den Sender geladen'); send(port, 'PATTERNS'); }
+    if (state === 'error') A.toast('Upload fehlgeschlagen: ' + error, 6000);
+    updateSender(port);
+  }
+
   function flash(volume) {
-    if (!st.firmware.available) { A.toast('In dieser App-Version ist keine Empfänger-Firmware enthalten', 5000); return; }
+    const d = st.devices.find((x) => x.volume === volume);
+    const fw = d && d.board === 'RP2350' ? fwS() : fwR();
+    if (!fw.available) { A.toast('In dieser App-Version ist diese Firmware nicht enthalten', 5000); return; }
     st.flashing.add(volume);
     A.nativePost('device', { action: 'flash', volume });
     renderList();
@@ -155,9 +186,8 @@
     const ul = $('deviceList');
     if (!ul) return;
     ul.innerHTML = '';
-    $('fwInfo').textContent = st.firmware.available
-      ? 'Mitgelieferte Empfänger-Firmware: ' + st.firmware.version
-      : (A.NATIVE ? 'Keine Empfänger-Firmware in der App enthalten' : '');
+    $('fwInfo').textContent = A.NATIVE
+      ? 'Mitgelieferte Firmware: Empfänger ' + (fwR().version || '–') + ' · Sender ' + (fwS().version || '–') : '';
     if (!A.NATIVE) {
       ul.append(el('li', { class: 'empty' }, 'Geräte lassen sich nur in der Mac-App erkennen und einrichten.'));
       return;
@@ -174,31 +204,41 @@
         const info = st.info[d.port];
         const wall = wallFor(info);
         const pills = [];
-        if (info && st.firmware.available && verCmp(st.firmware.version, info.ver) > 0) pills.push(el('span', { class: 'pill warn' }, 'Update'));
+        if (info && fwR().available && verCmp(fwR().version, info.ver) > 0) pills.push(el('span', { class: 'pill warn' }, 'Update'));
         if (info && !info.saved) pills.push(el('span', { class: 'pill warn' }, 'ungespeichert'));
         if (st.preview.has(d.port)) pills.push(el('span', { class: 'pill info' }, 'live'));
         li.append(
           el('div', { class: 'dname' }, info ? info.name + ' · Adresse ' + info.addr : 'Empfänger', ...pills),
           el('div', { class: 'dsub' }, info ? 'Firmware ' + info.ver + ' · ' + info.w + '×' + info.h + (wall ? ' · im Raum: ' + wall.name : '') : 'verbinde …'));
+      } else if (d.kind === 'sender') {
+        const info = st.info[d.port];
+        const pills = [];
+        if (info && fwS().available && verCmp(fwS().version, info.ver) > 0) pills.push(el('span', { class: 'pill warn' }, 'Update'));
+        if (info && !info.bank.ok) pills.push(el('span', { class: 'pill warn' }, 'keine Bank'));
+        li.append(
+          el('div', { class: 'dname' }, 'Sender (Pico 2W)', ...pills),
+          el('div', { class: 'dsub' }, info ? info.bpm.toFixed(1) + ' BPM · ' + (info.bank.ok ? info.patternName : 'keine Bank') + ' · WLAN ' + (info.wifi.ip || info.wifi.state) : 'verbinde …'));
       } else if (d.kind === 'bootsel') {
         const busy = st.flashing.has(d.volume);
+        const sender = d.board === 'RP2350';
+        const fw = sender ? fwS() : fwR();
         li.append(
-          el('div', { class: 'dname' }, (d.board || 'RP2') + ' im BOOTSEL-Modus'),
-          el('div', { class: 'dsub' }, d.board === 'RP2040' ? 'Bereit für die Empfänger-Firmware' : 'Das ist kein RP2040 (z. B. der Pico 2W) – die Empfänger-Firmware passt hier nicht.'),
-          d.board === 'RP2040' ? el('div', { class: 'dact' },
-            el('button', { class: 'accent', disabled: busy || !st.firmware.available, onclick: (e) => { e.stopPropagation(); flash(d.volume); } },
-              busy ? 'Spiele auf …' : 'Empfänger-Firmware installieren')) : null);
+          el('div', { class: 'dname' }, (sender ? 'Pico 2W' : 'RP2040 Zero') + ' im BOOTSEL-Modus'),
+          el('div', { class: 'dsub' }, sender ? 'Bereit für die Sender-Firmware' : 'Bereit für die Empfänger-Firmware'),
+          el('div', { class: 'dact' },
+            el('button', { class: 'accent', disabled: busy || !fw.available, onclick: (e) => { e.stopPropagation(); flash(d.volume); } },
+              busy ? 'Spiele auf …' : (sender ? 'Sender-Firmware installieren' : 'Empfänger-Firmware installieren'))));
       } else {
         li.append(
           el('div', { class: 'dname' }, d.product || 'RP2040-Board'),
           el('div', { class: 'dsub' }, 'Läuft mit anderer Software (' + d.port.replace('/dev/', '') + ')'),
           el('div', { class: 'dact' }, el('button', { onclick: (e) => {
             e.stopPropagation();
-            if (!confirm('Auf „' + (d.product || 'dieses Board') + '“ die LEDWall-Empfänger-Firmware aufspielen? Die bisherige Software wird ersetzt.')) return;
+            if (!confirm('Auf „' + (d.product || 'dieses Board') + '“ die LEDWall-Firmware aufspielen (RP2040 → Empfänger, Pico 2W → Sender)? Die bisherige Software wird ersetzt.')) return;
             st.pendingFlash = Date.now() + 20000;
             A.nativePost('device', { action: 'touch1200', port: d.port });
             A.toast('Starte das Board im BOOTSEL-Modus …');
-          } }, 'Zum Empfänger machen')));
+          } }, 'LEDWall-Firmware aufspielen')));
       }
       ul.append(li);
     }
@@ -276,11 +316,12 @@
       return;
     }
     if (!d) { box.append(...wiringCard(true)); return; }
+    if (d.kind === 'sender') { renderSender(box, d); return; }
     if (d.kind !== 'receiver') {
       box.append(el('div', { class: 'card' },
         el('h3', null, d.kind === 'bootsel' ? 'Firmware installieren' : 'Anderes Board'),
         el('p', null, d.kind === 'bootsel'
-          ? 'Klicke links auf „Empfänger-Firmware installieren“. Der Zero startet danach neu und erscheint als Empfänger. Dann kannst du Adresse und Panels einstellen.'
+          ? 'Klicke links auf „… Firmware installieren“. Das Board startet danach neu und erscheint als Empfänger (RP2040 Zero) bzw. als Sender (Pico 2W).'
           : 'Dieses Board läuft mit anderer Software. „Zum Empfänger machen“ spielt die LEDWall-Firmware auf.')),
         ...wiringCard(true));
       return;
@@ -292,7 +333,7 @@
     const markDirty = () => { st.dirty[port] = true; updateStatusLine(); diagram && drawDiagram(diagram, e); };
     let diagram = null;
 
-    const outdated = st.firmware.available && verCmp(st.firmware.version, info.ver) > 0;
+    const outdated = fwR().available && verCmp(fwR().version, info.ver) > 0;
     statusEl = el('span', { class: 'muted' });
 
     const apply = async (save) => {
@@ -320,8 +361,8 @@
         outdated ? el('button', { class: 'accent', onclick: () => {
           st.pendingFlash = Date.now() + 20000;
           send(port, 'BOOTSEL');
-          A.toast('Update auf Firmware ' + st.firmware.version + ' …');
-        } }, 'Firmware auf ' + st.firmware.version + ' aktualisieren') : null)));
+          A.toast('Update auf Firmware ' + fwR().version + ' …');
+        } }, 'Firmware auf ' + fwR().version + ' aktualisieren') : null)));
 
     // Adresse
     const cardAddr = el('div', { class: 'card' }, el('h3', null, 'Adresse & Name'),
@@ -462,7 +503,186 @@
 
   A.onView((v) => { if (v === 'devices') { renderList(); renderDetail(); } });
 
-  window.LEDDevices = { onDevices, onLine, onFlash, state: st };
+  // ---------------------------------------------------------------- Sender (Pico 2W)
+
+  const senderEls = {};
+
+  function renderSender(box, d) {
+    const port = d.port;
+    const info = st.info[port];
+    if (!info) { box.append(el('div', { class: 'card' }, 'Verbinde mit dem Sender …')); return; }
+    const outdated = fwS().available && verCmp(fwS().version, info.ver) > 0;
+    const E = senderEls;
+    E.port = port;
+    const btn = (label, cmd, cls) => el('button', { class: cls || '', onclick: () => { send(port, cmd); setTimeout(() => send(port, 'INFO'), 60); } }, label);
+
+    // Kopf
+    const head = el('div', { class: 'card' },
+      el('h1', null, 'Sender', el('span', { class: 'pill info' }, 'Pico 2W')),
+      el('div', { class: 'muted' }, 'Seriennummer ' + info.uid + ' · Firmware ' + info.ver),
+      el('div', { class: 'actions' },
+        btn('Wände zeigen (Adressen)', 'IDENT 5'),
+        el('button', { onclick: () => send(port, 'REBOOT') }, 'Neu starten'),
+        outdated ? el('button', { class: 'accent', onclick: () => {
+          st.pendingFlash = Date.now() + 20000;
+          send(port, 'BOOTSEL');
+          A.toast('Update auf Sender-Firmware ' + fwS().version + ' …');
+        } }, 'Firmware auf ' + fwS().version + ' aktualisieren') : null));
+
+    // Live-Steuerung
+    E.bpm = el('input', { type: 'number', min: 20, max: 300, step: 0.1, style: 'width:90px;font-size:18px;font-weight:700' });
+    E.bpm.addEventListener('change', () => send(port, 'BPM ' + E.bpm.value));
+    E.pattern = el('select');
+    E.pattern.addEventListener('change', () => send(port, 'PATTERN ' + E.pattern.value + (E.now.checked ? ' now' : '')));
+    E.now = el('input', { type: 'checkbox' });
+    E.auto = el('select', null, [[0, 'aus'], [4, 'alle 4 Takte'], [8, 'alle 8 Takte'], [16, 'alle 16 Takte'], [32, 'alle 32 Takte'], [64, 'alle 64 Takte']]
+      .map(([v, l]) => el('option', { value: v }, l)));
+    E.auto.addEventListener('change', () => send(port, 'AUTO ' + E.auto.value));
+    E.bright = el('input', { type: 'range', min: 0, max: 255, step: 1 });
+    E.bright.addEventListener('change', () => send(port, 'BRIGHT ' + E.bright.value));
+    E.play = el('button', { onclick: () => send(port, st.info[port].playing ? 'STOP' : 'PLAY') });
+    E.black = el('button', { onclick: () => send(port, 'BLACKOUT ' + (st.info[port].blackout ? 0 : 1)) }, 'Blackout');
+    E.status = el('span', { class: 'muted' });
+    const live = el('div', { class: 'card' }, el('h3', null, 'Live-Steuerung'),
+      row('Tempo', el('span', null, E.bpm, ' BPM'), E.status),
+      el('div', { class: 'actions', style: 'margin-top:0' },
+        btn('Tap', 'TAP', 'accent'), btn('Sync (1)', 'SYNC'), btn('−1', 'BPM ' + (info.bpm - 1)), btn('+1', 'BPM ' + (info.bpm + 1)),
+        el('button', { onclick: () => send(port, 'BPM ' + st.info[port].bpm / 2) }, '½'),
+        el('button', { onclick: () => send(port, 'BPM ' + st.info[port].bpm * 2) }, '×2'),
+        E.play, E.black),
+      row('Pattern', E.pattern, el('label', { class: 'inline' }, E.now, ' sofort')),
+      el('div', { class: 'actions', style: 'margin-top:0' }, btn('◀ Vorheriges', 'PREV'), btn('Nächstes ▶', 'NEXT')),
+      row('Automatisch', E.auto),
+      row('Helligkeit (alle Wände)', E.bright),
+      el('div', { class: 'actions' }, btn('Als Startwerte speichern', 'SAVE')));
+
+    // Bank
+    const geo = S.bankGeometry(A.project());
+    const opts = st.bankOpts = st.bankOpts || { fps: 25, format: 'rgb565' };
+    E.bankInfo = el('div', { class: 'muted', style: 'font-size:12px' });
+    E.progress = el('progress', { max: 1, value: 0, hidden: true, style: 'width:100%' });
+    E.estimate = el('div', { class: 'muted', style: 'font-size:12px' });
+    const fps = el('select', null, [15, 20, 25, 30, 40].map((v) => el('option', { value: v }, v + ' fps (bei Ref-BPM)')));
+    fps.value = String(opts.fps);
+    const fmt = el('select', null, el('option', { value: 'rgb888' }, 'RGB888 (beste Farben)'), el('option', { value: 'rgb565' }, 'RGB565 (halbe Größe)'));
+    fmt.value = opts.format;
+    const estimate = () => {
+      const L = R.bankLayout(A.project(), Object.assign({ refBpm: A.project().refBpm }, opts, geo));
+      const mb = L.total / 1048576, max = (st.info[port].bank.max || 3 * 1048576) / 1048576;
+      E.estimate.textContent = A.project().patterns.length + ' Patterns · Leinwand ' + geo.width + '×' + geo.height + ' · ' +
+        (geo.walls.length ? geo.walls.length + (geo.walls.length === 1 ? ' Wand' : ' Wände') + ' (' + (geo.mode === 'span' ? 'verteilt' : 'gleiches Bild') + ')' : 'ohne Raum-Setup (an alle)') +
+        ' · ' + mb.toFixed(2) + ' MB von ' + max.toFixed(2) + ' MB' + (mb > max ? ' – zu groß! FPS oder Format verringern.' : '');
+      return mb <= max;
+    };
+    fps.addEventListener('change', () => { opts.fps = +fps.value; estimate(); });
+    fmt.addEventListener('change', () => { opts.format = fmt.value; estimate(); });
+    E.uploadBtn = el('button', { class: 'accent', onclick: () => {
+      if (!estimate()) { A.toast('Die Bank ist zu groß für den Sender', 5000); return; }
+      E.uploadBtn.disabled = true;
+      A.toast('Rendere Frames …');
+      setTimeout(() => {
+        try {
+          const data = R.buildBank(A.project(), Object.assign({ refBpm: A.project().refBpm }, opts, geo));
+          st.upload[port] = { sent: 0, total: data.length, state: 'starting' };
+          A.nativePost('device', { action: 'upload', port, base64: R.bytesToBase64(data), crc: P.crc32(data) });
+          updateSender(port);
+        } catch (err) {
+          A.toast('Fehler: ' + err.message, 5000);
+          E.uploadBtn.disabled = false;
+        }
+      }, 30);
+    } }, 'Aktuelles Projekt auf den Sender laden');
+    const bank = el('div', { class: 'card' }, el('h3', null, 'Pattern-Bank'),
+      E.bankInfo,
+      row('Bildrate', fps), row('Format', fmt), E.estimate,
+      el('div', { class: 'actions' }, E.uploadBtn), E.progress,
+      el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' },
+        'Alle Patterns des Projekts werden auf die Referenz-BPM (' + A.project().refBpm + ') gerendert, zusammen mit dem Raum-Setup (Adressen, Ausgänge, Verteilung). Der Sender spielt sie danach ohne Mac ab.'));
+
+    // WLAN
+    const w = { mode: info.wifi.mode === 1 ? 'sta' : 'ap', apssid: info.wifi.apSsid, appass: '', ssid: info.wifi.staSsid, pass: '' };
+    const txt = (key, type, ph) => { const i = el('input', { type: type || 'text', placeholder: ph || '' }); i.value = w[key] || ''; i.addEventListener('input', () => { w[key] = i.value; }); return i; };
+    const mode = el('select', null, el('option', { value: 'ap' }, 'Eigenes Netz (Access Point)'), el('option', { value: 'sta' }, 'Vorhandenes WLAN'));
+    mode.value = w.mode;
+    mode.addEventListener('change', () => { w.mode = mode.value; });
+    E.wifiInfo = el('div', { class: 'muted', style: 'font-size:12px' });
+    const wifi = el('div', { class: 'card' }, el('h3', null, 'WLAN (Steuerung per Handy)'),
+      E.wifiInfo,
+      row('Modus', mode),
+      row('Eigenes Netz: Name', txt('apssid')), row('Eigenes Netz: Passwort', txt('appass', 'password', 'unverändert lassen')),
+      row('WLAN: Name', txt('ssid')), row('WLAN: Passwort', txt('pass', 'password', 'unverändert lassen')),
+      el('div', { class: 'actions' }, el('button', { class: 'accent', onclick: async () => {
+        let c = 'WIFI mode=' + w.mode + ' apssid=' + encodeURIComponent(w.apssid) + ' ssid=' + encodeURIComponent(w.ssid || '');
+        if (w.appass) c += ' appass=' + encodeURIComponent(w.appass);
+        if (w.pass) c += ' pass=' + encodeURIComponent(w.pass);
+        const r = await command(port, c);
+        if (!r.ok) { A.toast('Fehler: ' + r.error, 5000); return; }
+        send(port, 'REBOOT');
+        A.toast('Gespeichert – der Sender startet neu');
+      } }, 'Speichern & neu starten')),
+      el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' },
+        'Klappt die Verbindung zum vorhandenen WLAN nicht, öffnet der Sender nach 20 s automatisch sein eigenes Netz.'));
+
+    // Ausgänge
+    const baud = el('select', null, [1000000, 2000000, 3000000, 4000000].map((b) => el('option', { value: b }, b / 1e6 + ' MBaud')));
+    baud.value = String(info.baud);
+    baud.addEventListener('change', () => { send(port, 'BAUD ' + baud.value); send(port, 'SAVE'); });
+    const outs = el('div', { class: 'card' }, el('h3', null, 'Anschlüsse'),
+      row('UART-Baudrate', baud, el('span', { class: 'muted' }, 'muss bei allen Empfängern gleich sein')),
+      el('table', { class: 'wiring', style: 'margin-top:8px' },
+        [['GP0', 'Ausgang 1 → GP1 der Empfänger'], ['GP4', 'Ausgang 2 → GP1 der Empfänger'], ['GND', 'gemeinsame Masse mit allen Empfängern'],
+          ['GP15', 'Taster gegen GND: tippen = Tempo, halten = Sync'], ['GP14', 'Taster gegen GND: nächstes Pattern']]
+          .map(([a, b]) => el('tr', null, el('td', null, a), el('td', null, b)))),
+      el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' }, 'Welche Wand an welchem Ausgang hängt, stellst du im Tab „Raum“ ein.'));
+
+    box.append(head, live, bank, wifi, outs);
+    estimate();
+    updateSender(port);
+  }
+
+  function updateSender(port) {
+    const E = senderEls, info = st.info[port];
+    if (E.port !== port || !info || !E.bpm || !document.body.contains(E.bpm)) return;
+    if (document.activeElement !== E.bpm) E.bpm.value = info.bpm.toFixed(1);
+    const pats = st.patterns[port] || [];
+    if (E.pattern.options.length !== pats.length) {
+      E.pattern.innerHTML = '';
+      pats.forEach((p, i) => E.pattern.append(el('option', { value: i }, (i + 1) + '. ' + p.name)));
+    }
+    if (document.activeElement !== E.pattern) E.pattern.value = String(info.pattern);
+    E.auto.value = String(info.auto);
+    if (document.activeElement !== E.bright) E.bright.value = info.bright;
+    E.play.textContent = info.playing ? '⏸ Pause' : '▶ Start';
+    E.black.classList.toggle('active', info.blackout);
+    E.status.textContent = 'Takt ' + (Math.floor(info.beat / 4) % 1000 + 1) + ' · ' + (info.fps || 0).toFixed(0) + ' fps' +
+      (info.next >= 0 && pats[info.next] ? ' · gleich: ' + pats[info.next].name : '');
+    E.bankInfo.textContent = info.bank.ok
+      ? 'Auf dem Sender: ' + info.bank.patterns + ' Patterns · ' + info.bank.w + '×' + info.bank.h + ' · Ref-BPM ' + info.bank.refBpm +
+        ' · ' + (info.bank.size / 1048576).toFixed(2) + ' MB' + (info.bank.walls ? ' · ' + info.bank.walls + (info.bank.walls === 1 ? ' Wand' : ' Wände') : '')
+      : 'Auf dem Sender ist noch keine Bank (' + info.bank.error + ').';
+    E.wifiInfo.innerHTML = '';
+    E.wifiInfo.append(info.wifi.state === 'verbinde' ? 'Verbinde mit „' + info.wifi.ssid.replace(/"/g, '') + '“ …' :
+      el('span', null, (info.wifi.state === 'ap' ? 'Eigenes Netz „' + info.wifi.apSsid + '“' : 'Verbunden mit „' + info.wifi.staSsid + '“') +
+        ' · Handy-Steuerung: ', el('a', { href: 'http://' + info.wifi.ip, style: 'color:var(--accent2)' }, 'http://' + info.wifi.ip),
+        ' oder http://ledwall.local'));
+    const up = st.upload[port];
+    const busy = up && (up.state === 'starting' || up.state === 'sending');
+    E.progress.hidden = !busy;
+    if (up && up.total) E.progress.value = up.sent / up.total;
+    E.uploadBtn.disabled = !!busy;
+    E.uploadBtn.textContent = busy ? 'Lade hoch … ' + Math.round((up.sent / up.total) * 100) + ' %' : 'Aktuelles Projekt auf den Sender laden';
+  }
+
+  // Zustand des Senders regelmäßig abfragen, solange er angezeigt wird
+  setInterval(() => {
+    const d = selected();
+    if (!d || d.kind !== 'sender' || A.view() !== 'devices') return;
+    const up = st.upload[d.port];
+    if (up && (up.state === 'starting' || up.state === 'sending')) return;
+    send(d.port, 'INFO');
+  }, 1000);
+
+  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, state: st };
 
   document.getElementById('btnDevRescan').onclick = () => A.nativePost && A.NATIVE && A.nativePost('device', { action: 'state' });
   renderList();

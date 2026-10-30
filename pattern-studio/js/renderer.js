@@ -684,23 +684,27 @@
    * Abspielen: beat = Sekunden * BPM / 60
    *            frame = floor(beat * framesPerBeat) % frameCount
    */
+  // opts: refBpm, fps, format, optional width/height (Leinwand), walls[], mode (siehe setup.js bankGeometry)
   function bankLayout(project, opts) {
     const fpb = Math.max(1, Math.min(255, Math.round((opts.fps * 60) / opts.refBpm)));
     const bpp = opts.format === 'rgb565' ? 2 : 3;
-    const frameBytes = project.width * project.height * bpp;
-    let total = 32 + 32 * project.patterns.length;
+    const W = opts.width || project.width, H = opts.height || project.height;
+    const frameBytes = W * H * bpp;
+    const walls = opts.walls || [];
+    const setupOffset = walls.length ? 32 + 32 * project.patterns.length : 0;
+    let total = 32 + 32 * project.patterns.length + (walls.length ? 8 + 32 * walls.length : 0);
     const entries = project.patterns.map((p) => {
       const frames = p.loopBeats * fpb;
       const e = { frames, offset: total, bytes: frames * frameBytes };
       total += e.bytes;
       return e;
     });
-    return { fpb, bpp, frameBytes, entries, total };
+    return { fpb, bpp, frameBytes, entries, total, W, H, setupOffset };
   }
 
   function buildBank(project, opts, onProgress) {
-    const W = project.width, H = project.height;
     const L = bankLayout(project, opts);
+    const W = L.W, H = L.H;
     const buf = new Uint8Array(L.total);
     const dv = new DataView(buf.buffer);
     buf.set([0x4c, 0x57, 0x42, 0x31], 0); // "LWB1"
@@ -711,7 +715,29 @@
     dv.setUint8(11, L.bpp === 2 ? 1 : 0);
     dv.setUint16(12, project.patterns.length, true);
     dv.setUint32(16, 32, true);
+    dv.setUint32(20, L.setupOffset, true);
+    dv.setUint32(24, L.total, true);
     const enc = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+    if (L.setupOffset) {
+      // Raum-Setup: welche Wand (Adresse, Ausgang) welchen Ausschnitt der Leinwand zeigt
+      const o = L.setupOffset, walls = opts.walls;
+      buf.set([0x4c, 0x57, 0x53, 0x31], o); // "LWS1"
+      dv.setUint16(o + 4, walls.length, true);
+      dv.setUint8(o + 6, opts.mode === 'span' ? 1 : 0);
+      walls.forEach((w, i) => {
+        const e = o + 8 + i * 32;
+        const fx = (v) => Math.max(0, Math.min(65535, Math.round(v * 16)));
+        dv.setUint8(e, w.address);
+        dv.setUint8(e + 1, w.channel || 0);
+        dv.setUint16(e + 2, w.width, true);
+        dv.setUint16(e + 4, w.height, true);
+        dv.setUint16(e + 6, fx(w.region.x), true);
+        dv.setUint16(e + 8, fx(w.region.y), true);
+        dv.setUint16(e + 10, fx(w.region.w), true);
+        dv.setUint16(e + 12, fx(w.region.h), true);
+        if (enc) buf.set(enc.encode(w.name || '').subarray(0, 17), e + 14);
+      });
+    }
     const frame = new Float32Array(W * H * 3);
     let done = 0;
     const totalFrames = L.entries.reduce((s, e) => s + e.frames, 0);

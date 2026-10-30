@@ -20,7 +20,9 @@ Alle Zahlen sind Little Endian.
 | 12 | `u16` | Anzahl Patterns |
 | 14 | `u16` | reserviert |
 | 16 | `u32` | Offset der Pattern-Tabelle (= 32) |
-| 20 | 12 Byte | reserviert (0) |
+| 20 | `u32` | Offset des Raum-Setups (0 = keins, Bild an alle Wände) |
+| 24 | `u32` | Gesamtgröße der Datei in Byte |
+| 28 | 4 Byte | reserviert (0) |
 
 ## Pattern-Tabelle (32 Byte je Pattern)
 
@@ -32,6 +34,24 @@ Alle Zahlen sind Little Endian.
 | 24 | `u32` | `frameCount` (= Loop-Beats × framesPerBeat) |
 | 28 | `u32` | Offset der Frame-Daten ab Dateianfang |
 
+## Raum-Setup (optional)
+
+Liegt direkt hinter der Pattern-Tabelle, wenn im Projekt Wände angelegt sind. Die Frames haben
+dann die Größe der **Leinwand**:
+- Modus „gleiches Bild“: Leinwand = Größe der ersten Wand
+- Modus „verteilt“: alle Wände von vorne gesehen
+
+| Offset | Typ | Inhalt |
+|---|---|---|
+| 0 | `char[4]` | `"LWS1"` |
+| 4 | `u16` | Anzahl Wände (max. 8) |
+| 6 | `u8` | Modus: 0 = jede Wand zeigt das ganze Bild, 1 = verteilt |
+| 7 | `u8` | reserviert |
+| 8 | je 32 Byte | Wände |
+
+Wand (32 Byte): `u8` Adresse, `u8` Sender-Ausgang (0 = GP0, 1 = GP4), `u16` Breite,
+`u16` Höhe, `u16 x, y, w, h` Ausschnitt der Leinwand in 1/16 Pixel, `char[18]` Name.
+
 ## Frame-Daten
 
 Jedes Frame besteht aus Breite × Höhe Pixeln, **zeilenweise von oben links**, also
@@ -42,6 +62,8 @@ logische Koordinaten. Die Umsetzung auf die echte Verkabelung der Panels
 - RGB565: 2 Byte pro Pixel (`RRRRRGGG GGGBBBBB` als u16) → 6144 Byte pro Frame
 
 ## Abspielen (Pico 2W)
+
+Die Firmware dazu steht in `firmware/sender/`, siehe [sender.md](sender.md).
 
 ```c
 // beat läuft kontinuierlich weiter und wird nur durch die BPM bestimmt

@@ -1,0 +1,6 @@
+# Bettet web/index.html als C-Array ein (web_index.h)
+file(READ ${IN} HEX HEX)
+string(LENGTH "${HEX}" HEXLEN)
+math(EXPR LEN "${HEXLEN} / 2")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," BYTES "${HEX}")
+file(WRITE ${OUT} "// erzeugt aus web/index.html\n#pragma once\n#include <stdint.h>\nstatic const uint8_t WEB_INDEX[] = {${BYTES}};\n#define WEB_INDEX_LEN ${LEN}u\n")

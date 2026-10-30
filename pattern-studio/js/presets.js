@@ -78,6 +78,69 @@
       L('gradient', { paletteBlend: 'steps', palette: ['#ff0000', '#0000ff'], params: { size: 64, speed: 0 },
         envelope: { mode: 'strobe', rate: 4, duty: 0.5 } }),
     ] },
+
+    // ---------------------------------------------------------------- Hard Techno
+    // Schnell, hart, viel Kontrast: Rot/Weiß/Schwarz, Strobos auf der Kick, Bewegung im Takt.
+    { group: 'Hard Techno', name: 'HT Kick-Blitz', loopBeats: 1, layers: () => [
+      L('solid', { name: 'Glut', palette: ['#250000'] }),
+      L('solid', { name: 'Kick', palette: ['#ffffff'], blend: 'add', envelope: { mode: 'pulse', decay: 0.9 } }),
+      L('shape', { name: 'Druckwelle', params: { shape: 'circle', size: 14, thickness: 3, pulse: 1.0 }, palette: ['#ff1030'], blend: 'add',
+        envelope: { mode: 'sawDown' } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Strobo 1/16', loopBeats: 1, layers: () => [
+      L('solid', { palette: ['#ffffff'], envelope: { mode: 'strobe', rate: 4, duty: 0.18 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Rote Hämmer', loopBeats: 4, layers: () => [
+      L('shape', { name: 'Hammer', params: { shape: 'square', size: 6, pulse: 0.8, tile: 32 }, palette: ['#ff0020'],
+        envelope: { mode: 'pulse', decay: 0.6, min: 0.15 } }),
+      L('solid', { name: 'Offbeat-Blitz', palette: ['#ffffff'], blend: 'add', envelope: { mode: 'strobe', rate: 1, duty: 0.08, phase: 0.5 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Acid-Tunnel', loopBeats: 4, layers: () => [
+      L('stripes', { params: { shape: 'square', size: 4, duty: 0.5, softness: 0.05, speed: 2 }, palette: ['#b6ff00', '#000000'],
+        envelope: { mode: 'pulse', decay: 0.6, min: 0.35 } }),
+      L('solid', { name: 'Kick', palette: ['#ffffff'], blend: 'add', opacity: 0.5, envelope: { mode: 'pulse', decay: 0.95 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Laser-Fächer', loopBeats: 4, layers: () => [
+      L('stripes', { params: { shape: 'angular', arms: 12, duty: 0.18, softness: 0.15, speed: 0 }, palette: ['#ff0030', '#ffffff'],
+        transform: { rotate: 0.25, cy: 1.1 }, envelope: { mode: 'pulse', decay: 0.5, min: 0.3 } }),
+      L('stripes', { name: 'Gegenfächer', params: { shape: 'angular', arms: 8, duty: 0.1, softness: 0.1, speed: 0 }, palette: ['#ffffff'],
+        transform: { rotate: -0.25, cy: 1.1 }, blend: 'add', opacity: 0.6, envelope: { mode: 'strobe', rate: 2, duty: 0.5, phase: 0.5 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Industrie-Scanner', loopBeats: 2, layers: () => [
+      L('scanner', { name: 'Rot waagrecht', params: { width: 4, speed: 1, mode: 'bounce', trail: 30 }, palette: ['#ff0020'] }),
+      L('scanner', { name: 'Weiß senkrecht', params: { width: 2, speed: 0.5, mode: 'bounce', trail: 12 }, palette: ['#ffffff'],
+        transform: { angle: 90 }, blend: 'add' }),
+      L('solid', { name: 'Kick', palette: ['#ff0020'], blend: 'add', opacity: 0.35, envelope: { mode: 'pulse', decay: 0.9 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Glitch-Rauschen', loopBeats: 2, layers: () => [
+      L('noise', { params: { scale: 3, speed: 2, octaves: 1, contrast: 3 }, palette: ['#000000', '#000000', '#ff0040', '#ffffff'],
+        envelope: { mode: 'random', rate: 8, duty: 0.6 } }),
+      L('stripes', { name: 'Scanlines', params: { shape: 'linear', size: 4, duty: 0.25, softness: 0, speed: 0 }, palette: ['#000000'],
+        transform: { angle: 90 }, opacity: 0.6 }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Schockwelle', loopBeats: 1, layers: () => [
+      L('stripes', { params: { shape: 'radial', size: 14, duty: 0.25, softness: 0.3, speed: 2 }, palette: ['#ffffff', '#ff0020'],
+        envelope: { mode: 'sawDown', min: 0.1 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Doppel-Checker', loopBeats: 2, layers: () => [
+      L('checker', { params: { size: 8, flipRate: 2 }, palette: ['#ff0030', '#000000'], envelope: { mode: 'pulse', rate: 2, decay: 0.4, min: 0.2 } }),
+      L('checker', { name: 'Grob weiß', params: { size: 24, flipRate: 1 }, palette: ['#ffffff', '#000000'], blend: 'multiply' }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Sirenen-Rotor', loopBeats: 2, layers: () => [
+      L('gradient', { params: { shape: 'angular', arms: 2, size: 64, speed: 1 }, palette: ['#ff0000', '#000000', '#000000'] }),
+      L('gradient', { name: 'Blau gegenläufig', params: { shape: 'angular', arms: 2, size: 64, speed: -1 }, palette: ['#0030ff', '#000000', '#000000'],
+        blend: 'add', opacity: 0.7 }),
+      L('solid', { name: 'Kick', palette: ['#ffffff'], blend: 'add', opacity: 0.4, envelope: { mode: 'pulse', decay: 0.95 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Bass-Regen', loopBeats: 4, layers: () => [
+      L('rain', { params: { speed: 3, trail: 20, density: 0.9 }, palette: ['#ffffff', '#ff0030', '#300000'],
+        envelope: { mode: 'pulse', decay: 0.5, min: 0.4 } }),
+    ] },
+    { group: 'Hard Techno', name: 'HT Peak-Time', loopBeats: 8, layers: () => [
+      L('plasma', { params: { scale: 4, speed: 1, colorSpeed: 0.5 }, palette: ['#ff0020', '#000000', '#ffffff', '#000000'],
+        transform: { kaleido: 8, rotate: 0.125 }, envelope: { mode: 'pulse', decay: 0.4, min: 0.35 } }),
+      L('solid', { name: 'Strobo', palette: ['#ffffff'], blend: 'add', opacity: 0.7, envelope: { mode: 'strobe', rate: 4, duty: 0.12 } }),
+    ] },
   ];
 
   function instantiate(preset) {

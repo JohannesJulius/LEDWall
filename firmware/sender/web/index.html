@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d0e12">
+<title>LEDWall</title>
+<style>
+  :root { --bg:#0d0e12; --panel:#181a21; --line:#2a2e38; --text:#eef0f5; --muted:#8b90a0; --accent:#ff2d6f; --accent2:#2ed3ff; --ok:#3ddc84; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 -apple-system, system-ui, sans-serif; padding: 12px 12px 40px; max-width: 640px; margin: auto; user-select: none; -webkit-user-select: none; }
+  h1 { font-size: 15px; letter-spacing: 2px; color: var(--accent); margin: 4px 0 12px; display: flex; justify-content: space-between; }
+  h1 small { color: var(--muted); letter-spacing: 0; font-weight: normal; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+  button { font: inherit; color: var(--text); background: #232631; border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; min-height: 48px; }
+  button:active { transform: scale(.97); background: #2d3140; }
+  button.on { background: var(--accent2); border-color: var(--accent2); color: #000; font-weight: 600; }
+  button.hot { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .bpm { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .bpm .val { font-size: 64px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -2px; text-align: center; flex: 1; }
+  .bpm .val small { font-size: 14px; color: var(--muted); letter-spacing: 0; display: block; margin-top: -8px; }
+  .grid { display: grid; gap: 8px; }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .tap { font-size: 28px; font-weight: 800; min-height: 96px; letter-spacing: 4px; }
+  .dots { display: flex; gap: 8px; justify-content: center; margin: 10px 0 2px; }
+  .dots i { width: 16px; height: 16px; border-radius: 50%; background: #2a2e38; }
+  .dots i.on { background: var(--accent2); box-shadow: 0 0 12px var(--accent2); }
+  .dots i.on.one { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  .pats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .pats button { text-align: left; padding: 10px 12px; }
+  .pats button small { display: block; color: var(--muted); font-size: 11px; }
+  .pats button.on small { color: #003; }
+  .pats button.next { outline: 2px dashed var(--accent); }
+  .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .row label { color: var(--muted); min-width: 90px; }
+  input[type=range] { flex: 1; accent-color: var(--accent2); height: 32px; }
+  select { font: inherit; color: var(--text); background: #232631; border: 1px solid var(--line); border-radius: 10px; padding: 10px; flex: 1; }
+  .status { color: var(--muted); font-size: 12px; text-align: center; }
+  .off { color: #ff6b6b; }
+  .lbl { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<h1>LEDWALL <small id="conn">verbinde …</small></h1>
+
+<div class="card">
+  <div class="bpm">
+    <button onclick="cmd('BPM ' + (st.bpm - 1).toFixed(2))">−1</button>
+    <button onclick="cmd('BPM ' + (st.bpm - 0.1).toFixed(2))">−.1</button>
+    <div class="val"><span id="bpm">–</span><small>BPM</small></div>
+    <button onclick="cmd('BPM ' + (st.bpm + 0.1).toFixed(2))">+.1</button>
+    <button onclick="cmd('BPM ' + (st.bpm + 1).toFixed(2))">+1</button>
+  </div>
+  <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+  <div class="grid g4" style="margin-top:10px">
+    <button onclick="cmd('BPM ' + st.bpm / 2)">½</button>
+    <button onclick="cmd('BPM ' + st.bpm * 2)">×2</button>
+    <button onclick="cmd('NUDGE -0.05')">◀ früher</button>
+    <button onclick="cmd('NUDGE 0.05')">später ▶</button>
+  </div>
+  <div class="grid g2" style="margin-top:8px">
+    <button class="tap hot" id="tap">TAP</button>
+    <button class="tap" onclick="cmd('SYNC')">SYNC 1</button>
+  </div>
+</div>
+
+<div class="card">
+  <p class="lbl">Patterns <span id="next" style="text-transform:none;letter-spacing:0"></span></p>
+  <div class="pats" id="pats"></div>
+  <div class="row" style="margin-top:10px">
+    <label>Wechsel</label>
+    <select id="when"><option value="">am nächsten Takt</option><option value=" now">sofort</option></select>
+  </div>
+  <div class="row">
+    <label>Automatisch</label>
+    <select id="auto" onchange="cmd('AUTO ' + this.value)">
+      <option value="0">aus</option><option value="4">alle 4 Takte</option><option value="8">alle 8 Takte</option>
+      <option value="16">alle 16 Takte</option><option value="32">alle 32 Takte</option><option value="64">alle 64 Takte</option>
+    </select>
+  </div>
+</div>
+
+<div class="card">
+  <div class="grid g3">
+    <button id="play" onclick="cmd(st.playing ? 'STOP' : 'PLAY')">⏸</button>
+    <button id="black" onclick="cmd('BLACKOUT ' + (st.blackout ? 0 : 1))">Blackout</button>
+    <button onclick="cmd('IDENT 5')">Wände zeigen</button>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <label>Helligkeit</label>
+    <input type="range" id="bright" min="0" max="255" step="1">
+  </div>
+  <div class="grid g2" style="margin-top:6px">
+    <button onclick="cmd('SAVE')">Als Start speichern</button>
+    <button onclick="load(true)">Neu laden</button>
+  </div>
+</div>
+
+<p class="status" id="status"></p>
+
+<script>
+let st = { bpm: 120, beat: 0, playing: true, patterns: [] };
+let t0 = performance.now(), busy = false;
+const $ = (id) => document.getElementById(id);
+
+function apply(s) {
+  const pats = s.patterns;
+  st = Object.assign(st, s);
+  if (pats) renderPatterns();
+  t0 = performance.now();
+  $('bpm').textContent = st.bpm.toFixed(st.bpm % 1 ? 1 : 0);
+  $('auto').value = String(st.auto);
+  if (document.activeElement !== $('bright')) $('bright').value = st.bright;
+  $('play').textContent = st.playing ? '⏸ Pause' : '▶ Start';
+  $('black').classList.toggle('hot', st.blackout);
+  $('next').textContent = st.next >= 0 && st.patterns[st.next] ? '→ ' + st.patterns[st.next].name : '';
+  for (const [i, b] of [...$('pats').children].entries()) {
+    b.classList.toggle('on', i === st.pattern);
+    b.classList.toggle('next', i === st.next);
+  }
+  const bank = st.bank || {};
+  $('status').innerHTML = (bank.ok ? bank.patterns + ' Patterns · ' + bank.w + '×' + bank.h + ' · ' + (bank.walls || 1) + ((bank.walls || 1) === 1 ? ' Wand · ' : ' Wände · ')
+    : '<span class="off">Keine Bank – in der App unter „Geräte“ hochladen</span> · ') + (st.fps || 0).toFixed(0) + ' fps' +
+    (st.wifi ? ' · ' + st.wifi.ip : '') + ' · Firmware ' + st.ver;
+  if (s.reply && s.reply.startsWith('ERR')) alert(s.reply.slice(4));
+}
+
+function renderPatterns() {
+  const box = $('pats');
+  box.innerHTML = '';
+  st.patterns.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.innerHTML = '<span></span><small>' + p.beats + (p.beats === 1 ? ' Beat' : ' Beats') + '</small>';
+    b.firstChild.textContent = p.name;
+    b.onclick = () => cmd('PATTERN ' + i + $('when').value);
+    box.append(b);
+  });
+}
+
+async function load(full) {
+  try {
+    const r = await fetch('/api/state' + (full ? '?full=1' : ''), { cache: 'no-store' });
+    apply(await r.json());
+    $('conn').textContent = 'verbunden';
+    $('conn').className = '';
+  } catch (e) {
+    $('conn').textContent = 'keine Verbindung';
+    $('conn').className = 'off';
+  }
+}
+
+async function cmd(c) {
+  try {
+    const r = await fetch('/api/cmd?c=' + encodeURIComponent(c), { cache: 'no-store' });
+    apply(await r.json());
+  } catch (e) { $('conn').textContent = 'keine Verbindung'; $('conn').className = 'off'; }
+}
+
+// TAP sofort beim Berühren auslösen (nicht erst beim Loslassen)
+$('tap').addEventListener('pointerdown', (e) => { e.preventDefault(); cmd('TAP'); });
+let brightTimer;
+$('bright').addEventListener('input', () => { clearTimeout(brightTimer); brightTimer = setTimeout(() => cmd('BRIGHT ' + $('bright').value), 80); });
+
+// Beat-Anzeige lokal weiterlaufen lassen
+function tick() {
+  const beat = st.playing ? st.beat + (performance.now() - t0) / 60000 * st.bpm : st.beat;
+  const b = Math.floor(beat), f = beat - b;
+  [...$('dots').children].forEach((d, i) => {
+    d.classList.toggle('on', i === ((b % 4) + 4) % 4 && f < 0.4);
+    d.classList.toggle('one', i === 0);
+  });
+  requestAnimationFrame(tick);
+}
+
+load(true);
+setInterval(() => load(false), 1500);
+tick();
+</script>
+</body>
+</html>
