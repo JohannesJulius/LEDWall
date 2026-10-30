@@ -38,6 +38,17 @@ else
   echo "WARNUNG: keine Empfänger-Firmware gefunden ($FW_UF2) – Aufspielen in der App nicht möglich"
 fi
 
+# Sender-Firmware (Pico 2W) einbetten
+FW_SENDER="${SENDER_UF2:-../firmware/sender/build/ledwall-sender.uf2}"
+if [ -f "$FW_SENDER" ]; then
+  mkdir -p "$APP/Contents/Resources/firmware"
+  cp "$FW_SENDER" "$APP/Contents/Resources/firmware/ledwall-sender.uf2"
+  tr -d ' \r\n' < ../firmware/sender/VERSION > "$APP/Contents/Resources/firmware/sender-version.txt"
+  echo "Sender-Firmware $(cat "$APP/Contents/Resources/firmware/sender-version.txt") eingebettet"
+else
+  echo "WARNUNG: keine Sender-Firmware gefunden ($FW_SENDER)"
+fi
+
 ICONSET="$OUT/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for S in 16 32 128 256 512; do

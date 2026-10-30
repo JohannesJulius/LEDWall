@@ -11,7 +11,8 @@ Modulare LED-Wand aus kleinen 64 × 48-Pixel-Wänden.
 ```
 
 - **Pico 2W:** Zentrale. Er hält die Pattern-Bank, bestimmt BPM und Beat-Position und
-  schickt jeder Wand, was sie zeigen soll.
+  schickt jeder Wand, was sie zeigen soll. Gesteuert wird er per Handy (eigenes WLAN mit
+  Weboberfläche), über die App oder per Tap-Taster, siehe [docs/sender.md](docs/sender.md).
 - **RP2040 Zero** (einer pro Wand): steuert die HUB75-Panels seiner 64 × 48-Wand an und
   versteht die Pakete vom Sender. Eingerichtet wird er in der App (Tab **Geräte**), siehe
   [docs/receiver.md](docs/receiver.md).
@@ -45,8 +46,8 @@ Benötigt macOS 12 oder neuer. Läuft nativ auf Apple Silicon und Intel.
 
 GitHub baut daraufhin die App (`.github/workflows/release.yml`), legt den Tag `v1.1.0` an und
 veröffentlicht `LED-Pattern-Studio.dmg`, `LED-Pattern-Studio-mac.zip` (für den Updater),
-`ledwall-receiver.uf2` und `SHA256SUMS.txt`. Die Empfänger-Firmware wird dabei mitgebaut
-und in die App eingebettet. Ihre Version steht in `firmware/receiver/VERSION`. Installierte Apps finden das Update automatisch.
+`ledwall-receiver.uf2`, `ledwall-sender.uf2` und `SHA256SUMS.txt`. Beide Firmwares werden
+dabei mitgebaut und in die App eingebettet. Ihre Versionen stehen in `firmware/*/VERSION`. Installierte Apps finden das Update automatisch.
 
 > Wie bei MakerDash muss das Repository **öffentlich** sein, damit die App Updates ohne
 > Anmeldung abrufen kann.
@@ -63,8 +64,10 @@ dann unter **Actions → Lauf → Artifacts**. Lokal auf dem Mac geht es mit
 | [`mac-app/`](mac-app/) | Mac-App um den Editor (Swift + WebKit) mit eingebautem Updater, Build-Skript |
 | [`release-notes/`](release-notes/) | Beschreibungen der einzelnen Versionen |
 | [`firmware/receiver/`](firmware/receiver/) | Empfänger-Firmware für den RP2040 Zero (C, Pico SDK), wird in die App eingebettet |
+| [`firmware/sender/`](firmware/sender/) | Sender-Firmware für den Pico 2W (C, Pico SDK, WLAN + Weboberfläche) |
+| [`firmware/common/`](firmware/common/) | Gemeinsamer Protokoll-Code |
+| [`docs/sender.md`](docs/sender.md) | Anschlüsse, Bedienung und Ablauf des Senders |
 | [`docs/receiver.md`](docs/receiver.md) | Verkabelung und Einrichtung des Empfängers |
 | [`docs/protocol.md`](docs/protocol.md) | Protokoll Sender → Empfänger und USB-Befehle |
 | [`docs/lwb-format.md`](docs/lwb-format.md) | Dateiformat der exportierten Pattern-Bank und wie der 2W sie abspielt |
 
-Die Firmware für den Sender (Pico 2W) folgt als Nächstes.

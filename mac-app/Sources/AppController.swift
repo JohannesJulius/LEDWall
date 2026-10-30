@@ -41,6 +41,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
         devices.onFlash = { [weak self] volume, ok, err in
             self?.callJS("flashResult", [["volume": volume, "ok": ok, "error": err]])
         }
+        devices.onUpload = { [weak self] port, sent, total, state, err in
+            self?.callJS("uploadProgress", [port, sent, total, state, err])
+        }
         devices.start()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -223,6 +226,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 if let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) { devices.sendFrame(port: port, data: d) }
             case "flash": devices.flash(volume: body["volume"] as? String ?? "")
             case "touch1200": devices.touch1200(port: port)
+            case "upload":
+                if let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) {
+                    devices.upload(port: port, data: d, crc: (body["crc"] as? NSNumber)?.uint32Value ?? 0)
+                }
             default: devices.pushState()
             }
         case "openURL":

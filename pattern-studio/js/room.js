@@ -315,7 +315,13 @@
       el('div', { class: 'section' }, el('h3', null, 'Wand'),
         field('Name', name),
         field('Adresse', numField(w, 'address', 1, onShape, { min: 1, max: 254 })),
-        field('Empfänger', recvSel)),
+        field('Empfänger', recvSel),
+        field('Sender-Ausgang', (() => {
+          const sel = el('select', null, el('option', { value: 0 }, 'Ausgang 1 (GP0)'), el('option', { value: 1 }, 'Ausgang 2 (GP4)'));
+          sel.value = String(w.channel || 0);
+          sel.addEventListener('change', () => { w.channel = +sel.value; A.changed(); });
+          return sel;
+        })())),
       el('div', { class: 'section' }, el('h3', null, 'Position (m)'),
         el('div', { class: 'muted', style: 'font-size:11px' }, 'x = links/rechts, y = Höhe (Mitte der Wand), z = vorne/hinten'),
         pos),

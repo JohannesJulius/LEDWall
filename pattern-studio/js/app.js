@@ -105,6 +105,7 @@
     devices(list, fw) { if (window.LEDDevices) window.LEDDevices.onDevices(list, fw); },
     deviceLine(port, line) { if (window.LEDDevices) window.LEDDevices.onLine(port, line); },
     flashResult(r) { if (window.LEDDevices) window.LEDDevices.onFlash(r); },
+    uploadProgress(port, sent, total, st2, err) { if (window.LEDDevices) window.LEDDevices.onUpload(port, sent, total, st2, err); },
   };
 
   // ------------------------------------------------------------------ persistence & undo
@@ -995,8 +996,10 @@
 
   // ------------------------------------------------------------------ export
 
+  // Export-Einstellungen inkl. Raum-Setup (Leinwand, Wände, Ausgänge)
   function exportOpts() {
-    return { refBpm: +$('expBpm').value || 120, fps: +$('expFps').value || 30, format: $('expFormat').value };
+    return Object.assign({ refBpm: +$('expBpm').value || 120, fps: +$('expFps').value || 30, format: $('expFormat').value },
+      window.LEDSetup.bankGeometry(state.project));
   }
 
   function updateExportSummary() {
@@ -1231,7 +1234,15 @@
 
   function init() {
     // Auswahllisten befüllen
-    PR.PRESETS.forEach((p, i) => $('presetSelect').append(el('option', { value: i }, p.name)));
+    const groups = {};
+    PR.PRESETS.forEach((p, i) => {
+      const g = p.group || 'Grundlagen';
+      if (!groups[g]) { groups[g] = el('optgroup', { label: g }); $('presetSelect').append(groups[g]); }
+      groups[g].append(el('option', { value: i }, p.name));
+    });
+    for (const g of Object.keys(groups)) {
+      if (g !== 'Grundlagen') groups[g].prepend(el('option', { value: 'group:' + g }, '★ Alle „' + g + '“-Patterns hinzufügen'));
+    }
     Object.keys(R.LAYER_TYPES).forEach((t) => $('addLayerSelect').append(el('option', { value: t }, R.LAYER_TYPES[t])));
 
     let saved = null;
@@ -1282,6 +1293,17 @@
     $('presetSelect').addEventListener('change', () => {
       const i = $('presetSelect').value;
       if (i === '') return;
+      if (i.startsWith('group:')) {
+        const list = PR.PRESETS.filter((p) => p.group === i.slice(6));
+        for (const p of list) state.project.patterns.push(PR.instantiate(p));
+        state.cur = state.project.patterns.length - list.length;
+        state.sel = pattern().layers.length - 1;
+        renderAll();
+        changed();
+        toast(list.length + ' Patterns hinzugefügt');
+        $('presetSelect').value = '';
+        return;
+      }
       addPattern(PR.instantiate(PR.PRESETS[+i]));
       $('presetSelect').value = '';
     });
