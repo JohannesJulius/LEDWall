@@ -1,0 +1,29 @@
+; HUB75 direkt am Pico 2W (Direktbetrieb). Adressleitungen setzt die CPU, weil sie beim
+; Seengreat-Adapter bis V3.8 nicht nebeneinander liegen.
+
+; 6 Farbpins nebeneinander (Standard / Seengreat ab V3.9): je Spalte ein Byte, Bit 0..5
+.program hub75d_data6
+.side_set 1
+.wrap_target
+    out pins, 6     side 0
+    out null, 2     side 1
+.wrap
+
+; 8 Pins ab GP2 (Seengreat bis V3.8: R1 G1 B1 R2 = GP2..5, G2 B2 = GP8/9, GP6/7 bleiben 0)
+.program hub75d_data8
+.side_set 1
+.wrap_target
+    out pins, 8     side 0
+    nop             side 1
+.wrap
+
+; Latch-Puls, dann OE für x+1 Takte. Side-Set: LAT (Bit 0), OE (Bit 1, aktiv low).
+.program hub75d_pulse
+.side_set 2
+.wrap_target
+    pull block      side 0b10
+    out x, 32   [2] side 0b11
+    nop         [1] side 0b10
+pulse:
+    jmp x-- pulse   side 0b00
+.wrap

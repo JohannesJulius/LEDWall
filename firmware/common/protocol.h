@@ -22,6 +22,7 @@ enum {
     LW_TEST = 0x06,         // u8 Testbild-Nummer (0 = aus)
     LW_IDENT = 0x07,        // u8 Sekunden: Adresse groß anzeigen
     LW_BLACKOUT = 0x08,     // alles aus
+    LW_FRAME_PART = 0x09,   // flags u8, fmt u8 (0 RGB888, 1 RGB565), y0 u16, rows u16, Pixel (Live-Vorschau per UDP)
 };
 
 #define LW_FLAG_SHOW 0x01 // Bild sofort anzeigen statt auf SHOW zu warten

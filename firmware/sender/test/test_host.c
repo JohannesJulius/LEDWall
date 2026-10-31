@@ -103,6 +103,16 @@ static void test_player(void) {
     player_set_playing(&p, false, 7000000);
     double b = player_beat(&p, 7000000);
     assert(player_beat(&p, 9000000) == b);
+    // Ableton Link: großer Versatz springt, kleiner wird sanft nachgezogen
+    player_t l;
+    player_init(&l, 120);
+    player_link(&l, 128, 100.0, 1000000);
+    assert(fabs(player_beat(&l, 1000000) - 100.0) < 1e-9 && fabs(l.bpm - 128) < 1e-9);
+    player_link(&l, 128, 100.0 + 128.0 / 60 * 0.5 + 0.1, 1500000); // 0,1 Beat voraus
+    double after = player_beat(&l, 1500000), target = 100.0 + 128.0 / 60 * 0.5 + 0.1;
+    assert(after < target && after > target - 0.1);                 // nur ein Teil korrigiert
+    for (int i = 0; i < 20; i++) player_link(&l, 128, target + 128.0 / 60 * 0.25 * (i + 1), 1500000 + 250000ull * (i + 1));
+    assert(fabs(player_beat(&l, 1500000 + 250000ull * 20) - (target + 128.0 / 60 * 5)) < 0.001); // eingerastet
     puts("player ok");
 }
 

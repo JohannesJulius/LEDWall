@@ -24,6 +24,8 @@ void player_set_playing(player_t *p, bool on, uint64_t now);
 void player_tap(player_t *p, uint64_t now);
 void player_sync(player_t *p, uint64_t now);           // jetzt ist "1" (Taktanfang)
 void player_nudge(player_t *p, double beats, uint64_t now);
+// Tempo und Beat von außen (Ableton Link über die App): großer Versatz -> springen, sonst sanft nachziehen
+void player_link(player_t *p, double bpm, double beat, uint64_t now);
 void player_select(player_t *p, int index, bool now_, int count);
 // Wechsel am Taktanfang und Auto-Wechsel ausführen. true = Pattern hat gewechselt.
 bool player_update(player_t *p, uint64_t now, int count);

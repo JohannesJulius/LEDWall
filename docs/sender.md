@@ -70,11 +70,13 @@ Textzeilen wie beim Empfänger (siehe [protocol.md](protocol.md)):
 | `INFO` | `INFO {json}`: BPM, Beat, Pattern, Bank, WLAN, fps |
 | `PATTERNS` | `STATE {json}` wie INFO, plus Patternliste |
 | `BPM 140` · `TAP` · `SYNC` · `NUDGE 0.05` | Tempo und Phase |
+| `LINK <bpm> <beat>` | Tempo und Beat von Ableton Link (schickt die App, siehe [ableton-link.md](ableton-link.md)) |
 | `PATTERN 3 [now]` · `NEXT` · `PREV` · `AUTO 16` | Patterns |
 | `PLAY` · `STOP` · `BLACKOUT 1` · `BRIGHT 200` · `IDENT 5` | Wiedergabe |
 | `WIFI mode=ap\|sta ssid=… pass=… apssid=… appass=…` | WLAN (URL-kodiert, gilt nach Neustart) |
 | `BAUD 2000000` · `SAVE` | Baudrate, Startwerte speichern |
 | `UPLOAD <bytes> <crc32>` | Bank übertragen: Antwort `READY`, dann Blöcke à 4096 Byte, je `ACK <n>`, am Ende `OK` |
+| (WLAN) `POST /api/upload?size=<bytes>&crc=<crc32>` | Bank über WLAN, Rohdaten im Body, Antwort = Zustand + `reply` |
 | `BOOTSEL` · `REBOOT` | Firmware-Update, Neustart |
 
 Die Weboberfläche nutzt dieselben Befehle über `GET /api/cmd?c=…`, den Zustand liefert
@@ -85,7 +87,8 @@ Die Weboberfläche nutzt dieselben Befehle über `GET /api/cmd?c=…`, den Zusta
 | Bereich | Inhalt |
 |---|---|
 | 0 – 1 MB | Firmware (≈ 400 KB inkl. WLAN) |
-| 1 MB – 4 MB − 4 KB | Pattern-Bank (max. ≈ 2,99 MB) |
+| 1 MB – 4 MB − 8 KB | Pattern-Bank (max. ≈ 2,99 MB) |
+| vorletzte 4 KB | Panel-Einstellungen im Direktbetrieb ([direct-mode.md](direct-mode.md)) |
 | letzte 4 KB | Einstellungen (WLAN, Start-BPM, Auto-Wechsel, Helligkeit, Baudrate) |
 
 Bauen: wie beim Empfänger, aber im Ordner `firmware/sender`. Das Pico SDK braucht zusätzlich

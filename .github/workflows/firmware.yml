@@ -39,9 +39,11 @@ jobs:
           cmake -S firmware/sender -B firmware/sender/build -G Ninja
           cmake --build firmware/sender/build
           # Programm muss vor dem Bank-Bereich (1 MB) enden
-          SIZE=$(arm-none-eabi-size -A firmware/sender/build/ledwall-sender.elf | awk '$1==".text"||$1==".rodata"||$1==".data"||$1==".binary_info"{s+=$2} END{print s}')
-          echo "Sender-Programm: $SIZE Byte"
-          test "$SIZE" -lt 1000000
+          for ELF in ledwall-sender ledwall-direct; do
+            SIZE=$(arm-none-eabi-size -A firmware/sender/build/$ELF.elf | awk '$1==".text"||$1==".rodata"||$1==".data"||$1==".binary_info"{s+=$2} END{print s}')
+            echo "$ELF: $SIZE Byte"
+            test "$SIZE" -lt 1000000
+          done
 
       - uses: actions/upload-artifact@v4
         with:
@@ -49,4 +51,5 @@ jobs:
           path: |
             firmware/receiver/build/ledwall-receiver.uf2
             firmware/sender/build/ledwall-sender.uf2
+            firmware/sender/build/ledwall-direct.uf2
           retention-days: 14

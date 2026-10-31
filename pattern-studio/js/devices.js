@@ -16,6 +16,10 @@
     devices: [],          // vom DeviceManager
     firmware: { receiver: { version: '', available: false }, sender: { version: '', available: false } },
     patterns: {},         // Sender-Port -> Patternliste
+    netHosts: loadHosts(),// Pico 2W, die per WLAN verbunden werden (Adressen)
+    netOffline: {},       // Adresse -> true, wenn nicht erreichbar
+    netBusy: {},
+    pendingVariant: '',   // welche Firmware ein Update aufspielen soll
     upload: {},           // Sender-Port -> { sent, total, state, error }
     info: {},             // port -> INFO-Objekt der Firmware
     edit: {},             // port -> bearbeitete Einstellungen (noch nicht übertragen)
@@ -41,6 +45,87 @@
 
   // ---------------------------------------------------------------- Hilfen
 
+  function loadHosts() {
+    try { return JSON.parse(localStorage.getItem('ledwall-net-hosts') || '[]'); } catch (e) { return []; }
+  }
+  function saveHosts() {
+    try { localStorage.setItem('ledwall-net-hosts', JSON.stringify(st.netHosts)); } catch (e) { /* egal */ }
+  }
+  const isNet = (port) => String(port).startsWith('net:');
+  const hostOf = (port) => String(port).slice(4);
+  const netDevices = () => st.netHosts.map((h) => ({ id: 'net:' + h, kind: 'sender', port: 'net:' + h, net: true, host: h }));
+
+  // Pico 2W über WLAN: Befehle als HTTP-Anfrage, Antworten wie über USB an onLine weiterreichen
+  async function netSend(port, text) {
+    const host = hostOf(port);
+    const poll = text === 'INFO' || text === 'PATTERNS';
+    if (poll && st.netBusy[host]) return;
+    const url = 'http://' + host + (text === 'INFO' ? '/api/state' : text === 'PATTERNS' ? '/api/state?full=1' : '/api/cmd?c=' + encodeURIComponent(text));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl && ctl.abort(), 3000);
+    if (poll) st.netBusy[host] = true;
+    try {
+      const r = await fetch(url, { cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+      const j = await r.json();
+      const wasOffline = st.netOffline[host];
+      st.netOffline[host] = false;
+      if (!poll) {
+        const reply = j.reply || 'OK';
+        onLine(port, reply.startsWith('OK') ? 'OK' : reply);
+      }
+      delete j.reply;
+      onLine(port, (j.patterns ? 'STATE ' : 'INFO ') + JSON.stringify(j));
+      if (wasOffline) renderList();
+    } catch (err) {
+      if (!st.netOffline[host]) { st.netOffline[host] = true; renderList(); }
+      if (!poll) onLine(port, 'ERR keine Verbindung zu ' + host);
+    } finally {
+      clearTimeout(timer);
+      if (poll) st.netBusy[host] = false;
+    }
+  }
+
+  // Bank per WLAN hochladen (HTTP-POST, Fortschritt über XMLHttpRequest)
+  function netUpload(port, data, crc) {
+    const host = hostOf(port);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'http://' + host + '/api/upload?size=' + data.length + '&crc=' + crc);
+    xhr.setRequestHeader('Content-Type', 'text/plain'); // einfache Anfrage, kein CORS-Preflight
+    xhr.timeout = 180000;
+    xhr.upload.onprogress = (ev) => onUpload(port, ev.loaded, data.length, 'sending', '');
+    xhr.onload = () => {
+      let reply = 'ERR ungültige Antwort';
+      try { reply = JSON.parse(xhr.responseText).reply || reply; } catch (e) { /* bleibt */ }
+      onUpload(port, data.length, data.length, reply === 'OK' ? 'done' : 'error', reply.replace(/^ERR\s*/, ''));
+    };
+    xhr.onerror = xhr.ontimeout = () => onUpload(port, 0, data.length, 'error', 'keine Verbindung zu ' + host);
+    onUpload(port, 0, data.length, 'starting', '');
+    xhr.send(data);
+  }
+
+  function addNetHost() {
+    const h = (prompt('Adresse des Pico 2W im WLAN (z. B. ledwall.local oder 192.168.1.50):', 'ledwall.local') || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (!h) return;
+    if (!st.netHosts.includes(h)) st.netHosts.push(h);
+    saveHosts();
+    st.devices = st.devices.filter((d) => !d.net).concat(netDevices());
+    st.sel = 'net:' + h;
+    netSend('net:' + h, 'PATTERNS');
+    renderList();
+    renderDetail();
+  }
+
+  function removeNetHost(host) {
+    st.netHosts = st.netHosts.filter((h) => h !== host);
+    saveHosts();
+    delete st.info['net:' + host];
+    st.preview.delete('net:' + host);
+    st.devices = st.devices.filter((d) => d.port !== 'net:' + host);
+    st.sel = null;
+    renderList();
+    renderDetail();
+  }
+
   function verCmp(a, b) {
     const pa = String(a || '0').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
     const pb = String(b || '0').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
@@ -49,6 +134,7 @@
   }
 
   function send(port, text) {
+    if (isNet(port)) { netSend(port, text); return; }
     A.nativePost('device', { action: 'send', port, text });
   }
 
@@ -68,6 +154,7 @@
   const receivers = () => st.devices.filter((d) => d.kind === 'receiver');
   const fwR = () => st.firmware.receiver || {};
   const fwS = () => st.firmware.sender || {};
+  const fwD = () => st.firmware.direct || {};
   const selected = () => st.devices.find((d) => d.id === st.sel) || null;
 
   function wallFor(info) {
@@ -95,7 +182,7 @@
 
   function onDevices(list, fw) {
     const before = new Set(st.devices.map((d) => d.id));
-    st.devices = list || [];
+    st.devices = (list || []).concat(netDevices());
     st.firmware = fw || st.firmware;
     for (const port of Object.keys(st.info)) {
       if (!st.devices.some((d) => d.port === port)) { delete st.info[port]; st.preview.delete(port); }
@@ -104,7 +191,8 @@
     for (const d of st.devices) {
       if (d.kind === 'bootsel' && !before.has(d.id) && Date.now() < st.pendingFlash) {
         st.pendingFlash = 0;
-        flash(d.volume);
+        flash(d.volume, st.pendingVariant);
+        st.pendingVariant = '';
       }
     }
     if (!st.sel || !st.devices.some((d) => d.id === st.sel)) {
@@ -131,8 +219,11 @@
       try {
         const info = JSON.parse(line.slice(5));
         const first = !st.info[port];
+        const wasDirect = st.info[port] && !!st.info[port].direct;
         st.info[port] = info;
+        if (info.direct && (!st.edit[port] || !st.dirty[port])) { st.edit[port] = editFromInfo(info.direct); st.dirty[port] = false; }
         if (first) send(port, 'PATTERNS');
+        if (!first && wasDirect !== !!info.direct && selected() && selected().port === port) { renderDetail(); return; }
         renderList();
         if (selected() && selected().port === port) { if (first) renderDetail(); else updateSender(port); }
       } catch (e) { /* unvollständig */ }
@@ -171,12 +262,13 @@
     updateSender(port);
   }
 
-  function flash(volume) {
+  function flash(volume, variant) {
     const d = st.devices.find((x) => x.volume === volume);
-    const fw = d && d.board === 'RP2350' ? fwS() : fwR();
+    variant = variant || (d && d.board === 'RP2350' ? 'sender' : 'receiver');
+    const fw = variant === 'direct' ? fwD() : variant === 'sender' ? fwS() : fwR();
     if (!fw.available) { A.toast('In dieser App-Version ist diese Firmware nicht enthalten', 5000); return; }
     st.flashing.add(volume);
-    A.nativePost('device', { action: 'flash', volume });
+    A.nativePost('device', { action: 'flash', volume, variant });
     renderList();
   }
 
@@ -188,11 +280,17 @@
     ul.innerHTML = '';
     $('fwInfo').textContent = A.NATIVE
       ? 'Mitgelieferte Firmware: Empfänger ' + (fwR().version || '–') + ' · Sender ' + (fwS().version || '–') : '';
+    const addNet = el('li', { class: 'empty', style: 'cursor:pointer', onclick: addNetHost },
+      el('div', { class: 'dname' }, '+ Pico 2W per WLAN verbinden'),
+      el('div', { class: 'dsub' }, 'Adresse eingeben, z. B. ledwall.local'));
     if (!A.NATIVE) {
-      ul.append(el('li', { class: 'empty' }, 'Geräte lassen sich nur in der Mac-App erkennen und einrichten.'));
-      return;
+      ul.append(el('li', { class: 'empty' }, 'USB-Geräte lassen sich nur in der Mac-App erkennen und einrichten.'));
+      st.devices = netDevices();
     }
     if (!st.devices.length) {
+      ul.append(addNet);
+    }
+    if (!st.devices.length && A.NATIVE) {
       ul.append(el('li', { class: 'empty' },
         el('div', { class: 'dname' }, 'Kein Gerät gefunden'),
         el('div', { class: 'dsub' }, 'RP2040 Zero per USB anschließen. Neuer Zero: BOOT-Taste gedrückt halten und einstecken.')));
@@ -213,11 +311,15 @@
       } else if (d.kind === 'sender') {
         const info = st.info[d.port];
         const pills = [];
-        if (info && fwS().available && verCmp(fwS().version, info.ver) > 0) pills.push(el('span', { class: 'pill warn' }, 'Update'));
+        if (info && !d.net && fwS().available && verCmp(fwS().version, info.ver) > 0) pills.push(el('span', { class: 'pill warn' }, 'Update'));
         if (info && !info.bank.ok) pills.push(el('span', { class: 'pill warn' }, 'keine Bank'));
+        if (d.net) pills.push(el('span', { class: 'pill ' + (st.netOffline[d.host] ? 'warn' : 'info') }, st.netOffline[d.host] ? 'offline' : 'WLAN'));
+        if (info && info.direct) pills.push(el('span', { class: 'pill info' }, 'Direkt'));
+        if (st.preview.has(d.port)) pills.push(el('span', { class: 'pill info' }, 'live'));
         li.append(
-          el('div', { class: 'dname' }, 'Sender (Pico 2W)', ...pills),
-          el('div', { class: 'dsub' }, info ? info.bpm.toFixed(1) + ' BPM · ' + (info.bank.ok ? info.patternName : 'keine Bank') + ' · WLAN ' + (info.wifi.ip || info.wifi.state) : 'verbinde …'));
+          el('div', { class: 'dname' }, 'Pico 2W' + (d.net ? ' · ' + d.host : ''), ...pills),
+          el('div', { class: 'dsub' }, info ? info.bpm.toFixed(1) + ' BPM · ' + (info.bank.ok ? info.patternName : 'keine Bank') +
+            (info.direct ? ' · Panels direkt' : '') + ' · WLAN ' + (info.wifi.ip || info.wifi.state) : (d.net ? 'verbinde mit ' + d.host + ' …' : 'verbinde …')));
       } else if (d.kind === 'bootsel') {
         const busy = st.flashing.has(d.volume);
         const sender = d.board === 'RP2350';
@@ -227,7 +329,9 @@
           el('div', { class: 'dsub' }, sender ? 'Bereit für die Sender-Firmware' : 'Bereit für die Empfänger-Firmware'),
           el('div', { class: 'dact' },
             el('button', { class: 'accent', disabled: busy || !fw.available, onclick: (e) => { e.stopPropagation(); flash(d.volume); } },
-              busy ? 'Spiele auf …' : (sender ? 'Sender-Firmware installieren' : 'Empfänger-Firmware installieren'))));
+              busy ? 'Spiele auf …' : (sender ? 'Sender-Firmware installieren' : 'Empfänger-Firmware installieren')),
+            sender ? el('button', { disabled: busy || !fwD().available, title: 'HUB75-Panels hängen direkt am Pico 2W (Seengreat-Adapter)',
+              onclick: (e) => { e.stopPropagation(); flash(d.volume, 'direct'); } }, 'Direktbetrieb installieren') : null));
       } else {
         li.append(
           el('div', { class: 'dname' }, d.product || 'RP2040-Board'),
@@ -242,6 +346,7 @@
       }
       ul.append(li);
     }
+    if (st.devices.length) ul.append(addNet);
   }
 
   // ---------------------------------------------------------------- Details
@@ -296,8 +401,9 @@
   let statusEl = null;
   function updateStatusLine() {
     const d = selected();
-    if (!statusEl || !d || d.kind !== 'receiver') return;
-    const info = st.info[d.port];
+    if (!statusEl || !d) return;
+    const i0 = st.info[d.port];
+    const info = i0 && (i0.direct || i0);
     if (!info) return;
     statusEl.textContent = st.dirty[d.port] ? 'Geändert – noch nicht übertragen'
       : info.saved ? 'Auf dem Gerät gespeichert' : 'Übertragen, aber noch nicht dauerhaft gespeichert';
@@ -309,6 +415,7 @@
     box.innerHTML = '';
     statusEl = null;
     const d = selected();
+    if (d && d.kind === 'sender' && d.net) { renderSender(box, d); return; }
     if (!A.NATIVE) {
       box.append(el('div', { class: 'card' }, el('h3', null, 'Mac-App benötigt'),
         el('p', null, 'Zum Erkennen, Einrichten und Aufspielen der Empfänger bitte die Mac-App „LED Pattern Studio“ verwenden. Die Verkabelung siehst du unten.')),
@@ -330,26 +437,16 @@
     const info = st.info[port];
     if (!info) { box.append(el('div', { class: 'card' }, 'Verbinde mit dem Empfänger …')); return; }
     const e = st.edit[port];
-    const markDirty = () => { st.dirty[port] = true; updateStatusLine(); diagram && drawDiagram(diagram, e); };
-    let diagram = null;
-
+    const markDirty = () => { st.dirty[port] = true; updateStatusLine(); };
     const outdated = fwR().available && verCmp(fwR().version, info.ver) > 0;
-    statusEl = el('span', { class: 'muted' });
+    const pc = panelCards(port, info, {
+      onApplied: (ed) => {
+        // Adresse/Name in die verknüpfte Wand im Raum übernehmen
+        const wall = wallFor(info);
+        if (wall) { wall.address = ed.addr; wall.width = ed.w; wall.height = ed.h; A.changed(); }
+      },
+    });
 
-    const apply = async (save) => {
-      let r = await command(port, setArgs(e));
-      if (!r.ok) { A.toast('Fehler: ' + r.error, 5000); return; }
-      if (save) {
-        r = await command(port, 'SAVE');
-        if (!r.ok) { A.toast('Speichern fehlgeschlagen: ' + r.error, 5000); return; }
-      }
-      st.dirty[port] = false;
-      send(port, 'INFO');
-      // Adresse/Name in die verknüpfte Wand im Raum übernehmen
-      const wall = wallFor(info);
-      if (wall) { wall.address = e.addr; wall.width = e.w; wall.height = e.h; A.changed(); }
-      A.toast(save ? 'Auf dem Empfänger gespeichert' : 'Übertragen (noch nicht gespeichert)');
-    };
 
     // Kopf
     const cardHead = (el('div', { class: 'card' },
@@ -368,6 +465,54 @@
     const cardAddr = el('div', { class: 'card' }, el('h3', null, 'Adresse & Name'),
       row('Adresse (1–254)', numInput(e, 'addr', 1, 254, markDirty), el('span', { class: 'muted' }, 'Darauf hört der Empfänger am Sender-Kabel')),
       row('Name', (() => { const i = el('input', { type: 'text', maxlength: 23 }); i.value = e.name; i.addEventListener('input', () => { e.name = i.value; markDirty(); }); return i; })()));
+
+    // Raum
+    const setup = A.project().setup;
+    const wall = wallFor(info);
+    const wallSel = el('select', null, el('option', { value: '' }, '– keine –'),
+      setup.walls.map((w) => el('option', { value: w.id }, w.name + ' (Adresse ' + w.address + ')')),
+      el('option', { value: '__new' }, '+ neue Wand im Raum anlegen'));
+    wallSel.value = wall ? wall.id : '';
+    wallSel.addEventListener('change', () => {
+      for (const w of setup.walls) if (w.uid === info.uid) w.uid = '';
+      let target = setup.walls.find((w) => w.id === wallSel.value);
+      if (wallSel.value === '__new') {
+        target = S.makeWall(setup.walls.length + 1, { name: info.name, pos: { x: setup.walls.length * 0.4, y: 1.2, z: -setup.room.d / 2 + 0.1 } });
+        setup.walls.push(target);
+      }
+      if (target) { target.uid = info.uid; target.address = info.addr; target.width = info.w; target.height = info.h; if (!target.name) target.name = info.name; }
+      A.changed();
+      if (window.LEDRoom) window.LEDRoom.refresh();
+      renderList();
+      renderDetail();
+    });
+    const cardRoom = el('div', { class: 'card' }, el('h3', null, 'Im Raum'),
+      row('Verknüpfte Wand', wallSel, el('span', { class: 'muted' }, 'Position stellst du im Tab „Raum“ ein')));
+
+    box.append(cardHead, cardAddr, ...pc.cards, cardRoom, ...wiringCard(false));
+    updateStatusLine();
+  }
+
+  // Panels, Darstellung, Speichern und Testen: für Empfänger und für den Pico 2W im Direktbetrieb
+  function panelCards(port, info, opts) {
+    const e = st.edit[port];
+    let diagram = null;
+    const markDirty = () => { st.dirty[port] = true; updateStatusLine(); if (diagram) drawDiagram(diagram, e); };
+    statusEl = el('span', { class: 'muted' });
+    const direct = !!opts.direct;
+
+    const apply = async (save) => {
+      let r = await command(port, setArgs(e));
+      if (!r.ok) { A.toast('Fehler: ' + r.error, 5000); return; }
+      if (save) {
+        r = await command(port, 'SAVE');
+        if (!r.ok) { A.toast('Speichern fehlgeschlagen: ' + r.error, 5000); return; }
+      }
+      st.dirty[port] = false;
+      send(port, 'INFO');
+      if (opts.onApplied) opts.onApplied(e);
+      A.toast(save ? (direct ? 'Auf dem Pico 2W gespeichert' : 'Auf dem Empfänger gespeichert') : 'Übertragen (noch nicht gespeichert)');
+    };
 
     // Panels
     const presetSel = el('select', null, el('option', { value: '' }, 'Vorlage wählen …'), PRESETS.map((p, i) => el('option', { value: i }, p.name)));
@@ -394,7 +539,7 @@
       row('Vorlage', presetSel),
       row('Wandgröße', el('span', null, numInput(e, 'w', 8, 128, markDirty), ' × ', numInput(e, 'h', 8, 64, markDirty), ' Pixel')),
       row('Panelgröße', el('span', null, numInput(e, 'pw', 8, 128, markDirty), ' × ', numInput(e, 'ph', 8, 64, markDirty), ' Pixel')),
-      el('div', { class: 'muted', style: 'font-size:12px;margin:6px 0' }, 'Reihenfolge = Kette: Panel 1 hängt direkt am Zero, Panel 2 an dessen Ausgang usw. Position in Pixeln, oben links ist 0,0. Prüfen mit dem Testbild „Panels“: Zahl und Pfeil müssen lesbar nach rechts zeigen.'),
+      el('div', { class: 'muted', style: 'font-size:12px;margin:6px 0' }, 'Reihenfolge = Kette: Panel 1 hängt direkt am ' + (direct ? 'Adapter' : 'Zero') + ', Panel 2 an dessen Ausgang usw. Position in Pixeln, oben links ist 0,0. Prüfen mit dem Testbild „Panels“: Zahl und Pfeil müssen lesbar nach rechts zeigen.'),
       table,
       el('button', { onclick: () => { const last = e.panels[e.panels.length - 1] || [0, 0, 0]; e.panels.push([last[0], last[1] + e.ph, 0]); st.dirty[port] = true; renderDetail(); } }, '+ Panel'),
       el('div', null, diagram));
@@ -409,7 +554,7 @@
       row('Gamma', selectInput(e, 'gamma', [[18, '1,8'], [20, '2,0'], [22, '2,2 (Standard)'], [25, '2,5'], [28, '2,8']], markDirty)),
       row('Farbreihenfolge', selectInput(e, 'order', ORDERS.map((o, i) => [i, o]), markDirty), el('span', { class: 'muted' }, 'falls Rot und Blau vertauscht sind')),
       row('Panel-Takt', selectInput(e, 'div', CLOCKS, markDirty), el('span', { class: 'muted' }, 'langsamer bei Flackern / langen Kabeln')),
-      row('UART-Baudrate', selectInput(e, 'baud', BAUDS.map((b) => [b, (b / 1e6) + ' MBaud']), markDirty), el('span', { class: 'muted' }, 'muss zum Sender passen')));
+      direct ? null : row('UART-Baudrate', selectInput(e, 'baud', BAUDS.map((b) => [b, (b / 1e6) + ' MBaud']), markDirty), el('span', { class: 'muted' }, 'muss zum Sender passen')));
 
     const cardSave = el('div', { class: 'card' },
       el('div', { class: 'actions', style: 'margin-top:0;align-items:center' },
@@ -428,34 +573,12 @@
     });
     const cardTest = el('div', { class: 'card' }, el('h3', null, 'Testen'),
       el('div', { class: 'actions', style: 'margin-top:0' }, TESTS.map(([m, label]) => el('button', { onclick: () => command(port, 'TEST ' + m) }, label))),
-      el('label', { class: 'inline', style: 'margin-top:12px;display:flex' }, live,
-        ' Live-Vorschau: das aktuelle Pattern über USB auf dieser Wand zeigen'));
+      opts.noPreview
+        ? el('div', { class: 'muted', style: 'margin-top:12px;font-size:12px' }, opts.noPreview)
+        : el('label', { class: 'inline', style: 'margin-top:12px;display:flex' }, live,
+          ' Live-Vorschau: das aktuelle Pattern ' + (direct ? 'per WLAN' : 'über USB') + ' auf dieser Wand zeigen'));
 
-    // Raum
-    const setup = A.project().setup;
-    const wall = wallFor(info);
-    const wallSel = el('select', null, el('option', { value: '' }, '– keine –'),
-      setup.walls.map((w) => el('option', { value: w.id }, w.name + ' (Adresse ' + w.address + ')')),
-      el('option', { value: '__new' }, '+ neue Wand im Raum anlegen'));
-    wallSel.value = wall ? wall.id : '';
-    wallSel.addEventListener('change', () => {
-      for (const w of setup.walls) if (w.uid === info.uid) w.uid = '';
-      let target = setup.walls.find((w) => w.id === wallSel.value);
-      if (wallSel.value === '__new') {
-        target = S.makeWall(setup.walls.length + 1, { name: info.name, pos: { x: setup.walls.length * 0.4, y: 1.2, z: -setup.room.d / 2 + 0.1 } });
-        setup.walls.push(target);
-      }
-      if (target) { target.uid = info.uid; target.address = info.addr; target.width = info.w; target.height = info.h; if (!target.name) target.name = info.name; }
-      A.changed();
-      if (window.LEDRoom) window.LEDRoom.refresh();
-      renderList();
-      renderDetail();
-    });
-    const cardRoom = el('div', { class: 'card' }, el('h3', null, 'Im Raum'),
-      row('Verknüpfte Wand', wallSel, el('span', { class: 'muted' }, 'Position stellst du im Tab „Raum“ ein')));
-
-    box.append(cardHead, cardAddr, cardPanels, cardLook, cardSave, cardTest, cardRoom, ...wiringCard(false));
-    updateStatusLine();
+    return { cards: [cardPanels, cardLook, cardSave, cardTest] };
   }
 
   function wiringCard(open) {
@@ -493,6 +616,16 @@
     for (const port of st.preview) {
       const info = st.info[port];
       if (!info) continue;
+      if (isNet(port)) {
+        // Pico 2W im Direktbetrieb: Zeilenblöcke per UDP
+        if (!info.direct || !A.NATIVE) continue;
+        const w = info.direct.w, h = info.direct.h;
+        const wall0 = setup.walls[0];
+        let buf = wall0 && wall0.width === w && wall0.height === h ? frames[wall0.id] : null;
+        if (!buf) buf = cache['dev' + port] = R.renderPattern(pat, lb, w, h, cache['dev' + port]);
+        for (const pk of P.framePartPackets(buf, w, h)) A.nativePost('udp', { host: hostOf(port), port: 4210, base64: R.bytesToBase64(pk) });
+        continue;
+      }
       const wall = wallFor(info);
       let buf = wall && wall.width === info.w && wall.height === info.h ? frames[wall.id] : null;
       if (!buf) buf = R.renderPattern(pat, lb, info.w, info.h, cache['dev' + port]), cache['dev' + port] = buf;
@@ -517,16 +650,21 @@
     const btn = (label, cmd, cls) => el('button', { class: cls || '', onclick: () => { send(port, cmd); setTimeout(() => send(port, 'INFO'), 60); } }, label);
 
     // Kopf
+    const direct = info.direct;
     const head = el('div', { class: 'card' },
-      el('h1', null, 'Sender', el('span', { class: 'pill info' }, 'Pico 2W')),
-      el('div', { class: 'muted' }, 'Seriennummer ' + info.uid + ' · Firmware ' + info.ver),
+      el('h1', null, direct ? 'Pico 2W' : 'Sender', el('span', { class: 'pill info' }, direct ? 'Direktbetrieb' : 'Pico 2W'),
+        d.net ? el('span', { class: 'pill ' + (st.netOffline[d.host] ? 'warn' : 'info') }, st.netOffline[d.host] ? 'offline' : 'WLAN ' + d.host) : null),
+      el('div', { class: 'muted' }, 'Seriennummer ' + info.uid + ' · Firmware ' + info.ver +
+        (direct ? ' · Panels hängen direkt am Pico (' + direct.pinmapName + ')' : '')),
       el('div', { class: 'actions' },
-        btn('Wände zeigen (Adressen)', 'IDENT 5'),
+        btn(direct ? 'Adresse anzeigen' : 'Wände zeigen (Adressen)', 'IDENT 5'),
         el('button', { onclick: () => send(port, 'REBOOT') }, 'Neu starten'),
-        outdated ? el('button', { class: 'accent', onclick: () => {
+        d.net ? el('button', { class: 'danger', onclick: () => removeNetHost(d.host) }, 'Aus der Liste entfernen') : null,
+        outdated && !d.net ? el('button', { class: 'accent', onclick: () => {
           st.pendingFlash = Date.now() + 20000;
+          st.pendingVariant = direct ? 'direct' : 'sender';
           send(port, 'BOOTSEL');
-          A.toast('Update auf Sender-Firmware ' + fwS().version + ' …');
+          A.toast('Update auf Firmware ' + fwS().version + ' …');
         } }, 'Firmware auf ' + fwS().version + ' aktualisieren') : null));
 
     // Live-Steuerung
@@ -546,7 +684,8 @@
     const live = el('div', { class: 'card' }, el('h3', null, 'Live-Steuerung'),
       row('Tempo', el('span', null, E.bpm, ' BPM'), E.status),
       el('div', { class: 'actions', style: 'margin-top:0' },
-        btn('Tap', 'TAP', 'accent'), btn('Sync (1)', 'SYNC'), btn('−1', 'BPM ' + (info.bpm - 1)), btn('+1', 'BPM ' + (info.bpm + 1)),
+        btn('Tap', 'TAP', 'accent'), btn('Sync (1)', 'SYNC'), el('button', { onclick: () => send(port, 'BPM ' + (st.info[port].bpm - 1)) }, '−1'),
+        el('button', { onclick: () => send(port, 'BPM ' + (st.info[port].bpm + 1)) }, '+1'),
         el('button', { onclick: () => send(port, 'BPM ' + st.info[port].bpm / 2) }, '½'),
         el('button', { onclick: () => send(port, 'BPM ' + st.info[port].bpm * 2) }, '×2'),
         E.play, E.black),
@@ -584,7 +723,8 @@
         try {
           const data = R.buildBank(A.project(), Object.assign({ refBpm: A.project().refBpm }, opts, geo));
           st.upload[port] = { sent: 0, total: data.length, state: 'starting' };
-          A.nativePost('device', { action: 'upload', port, base64: R.bytesToBase64(data), crc: P.crc32(data) });
+          if (d.net) netUpload(port, data, P.crc32(data));
+          else A.nativePost('device', { action: 'upload', port, base64: R.bytesToBase64(data), crc: P.crc32(data) });
           updateSender(port);
         } catch (err) {
           A.toast('Fehler: ' + err.message, 5000);
@@ -635,9 +775,37 @@
           .map(([a, b]) => el('tr', null, el('td', null, a), el('td', null, b)))),
       el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' }, 'Welche Wand an welchem Ausgang hängt, stellst du im Tab „Raum“ ein.'));
 
-    box.append(head, live, bank, wifi, outs);
+    if (!direct) {
+      box.append(head, live, bank, wifi, outs);
+    } else {
+      // Direktbetrieb: Adapter-Version und die Panel-Einstellungen wie beim Empfänger
+      if (!st.edit[port]) { st.edit[port] = editFromInfo(direct); st.dirty[port] = false; }
+      const pin = el('select', null, el('option', { value: 1 }, 'Seengreat-Adapter bis V3.8'), el('option', { value: 0 }, 'Seengreat ab V3.9 / Standard (wie RP2040 Zero)'));
+      pin.value = String(direct.pinmap);
+      pin.addEventListener('change', async () => {
+        const r = await command(port, 'PINMAP ' + pin.value);
+        if (!r.ok) { A.toast('Fehler: ' + r.error, 5000); return; }
+        send(port, 'REBOOT');
+        A.toast('Gespeichert – der Pico startet neu');
+      });
+      const pins = direct.pinmap === 1
+        ? [['R1 G1 B1', 'GP2 GP3 GP4'], ['R2 G2 B2', 'GP5 GP8 GP9'], ['A B C D E', 'GP10 GP16 GP18 GP20 GP22'], ['CLK / LAT / OE', 'GP11 / GP12 / GP13'], ['Taster Tap / Nächstes', 'GP15 / GP14']]
+        : [['R1 G1 B1 R2 G2 B2', 'GP2 … GP7'], ['A B C D E', 'GP8 … GP12'], ['CLK / LAT / OE', 'GP13 / GP14 / GP15'], ['Taster Tap / Nächstes', 'GP26 / GP27']];
+      const adapter = el('div', { class: 'card' }, el('h3', null, 'Direktbetrieb (Panels am Pico 2W)'),
+        row('Adapter-Board', pin, el('span', { class: 'muted' }, 'Neustart nötig')),
+        el('table', { class: 'wiring', style: 'margin-top:6px' }, pins.map(([a, b]) => el('tr', null, el('td', null, a), el('td', null, b)))),
+        el('div', { class: 'muted', style: 'font-size:12px;margin-top:6px' },
+          'Vorübergehender Testmodus: der Pico 2W spielt die Patterns selbst auf den Panels ab. Die erste Wand im Raum-Setup legt den Bildausschnitt fest.'));
+      const pc = panelCards(port, direct, {
+        direct: true,
+        noPreview: !d.net ? 'Die Live-Vorschau geht im Direktbetrieb nur per WLAN: links „+ Pico 2W per WLAN verbinden“.'
+          : !A.NATIVE ? 'Die Live-Vorschau per WLAN braucht die Mac-App.' : null,
+      });
+      box.append(head, live, adapter, ...pc.cards, bank, wifi);
+    }
     estimate();
     updateSender(port);
+    updateStatusLine();
   }
 
   function updateSender(port) {
@@ -681,10 +849,38 @@
     if (up && (up.state === 'starting' || up.state === 'sending')) return;
     send(d.port, 'INFO');
   }, 1000);
+  // WLAN-Geräte in der Liste aktuell halten
+  setInterval(() => {
+    if (A.view() !== 'devices') return;
+    for (const h of st.netHosts) {
+      const port = 'net:' + h, d = selected();
+      if (d && d.port === port) continue;
+      send(port, st.info[port] ? 'INFO' : 'PATTERNS');
+    }
+  }, 3000);
 
-  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, state: st };
+  // Für link.js: alle Pico 2W, die gerade erreichbar sind
+  function senders() {
+    return st.devices.filter((d) => d.kind === 'sender' && st.info[d.port] && !(d.net && st.netOffline[d.host]));
+  }
+
+  // Taktmeldung ohne Antwort-Auswertung (zählt nicht als Befehl). Bei WLAN wird die Laufzeit gemessen.
+  const netRtt = {};
+  function sendQuiet(port, makeText) {
+    if (!isNet(port)) { A.nativePost('device', { action: 'send', port, text: makeText(0.004) }); return; }
+    const host = hostOf(port);
+    const lat = (netRtt[host] || 40) / 2000;
+    const t0 = performance.now();
+    fetch('http://' + host + '/api/cmd?c=' + encodeURIComponent(makeText(lat)), { cache: 'no-store' })
+      .then(() => { const rtt = performance.now() - t0; netRtt[host] = netRtt[host] ? netRtt[host] * 0.8 + rtt * 0.2 : rtt; })
+      .catch(() => {});
+  }
+
+  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, senders, sendQuiet, state: st };
 
   document.getElementById('btnDevRescan').onclick = () => A.nativePost && A.NATIVE && A.nativePost('device', { action: 'state' });
+  st.devices = netDevices();
+  for (const h of st.netHosts) send('net:' + h, 'PATTERNS');
   renderList();
   renderDetail();
 })();

@@ -16,7 +16,14 @@ void display_set_lut(display_t *d, uint8_t brightness, uint8_t gamma_x10) {
     }
 }
 
+void display_set_bitpos(display_t *d, const uint8_t upper[3], const uint8_t lower[3]) {
+    memcpy(d->bitpos[0], upper, 3);
+    memcpy(d->bitpos[1], lower, 3);
+}
+
 void display_setup(display_t *d, const config_t *c) {
+    static const uint8_t up[3] = {0, 1, 2}, lo[3] = {3, 4, 5};
+    if (!d->bitpos[0][1] && !d->bitpos[1][0]) display_set_bitpos(d, up, lo); // noch nicht gesetzt
     d->width = c->width;
     d->height = c->height;
     d->chain_w = (uint16_t)(c->panel_w * c->panel_count);
@@ -35,8 +42,8 @@ void display_setup(display_t *d, const config_t *c) {
                 if (x >= c->width || y >= c->height) continue;
                 uint32_t col = (uint32_t)p * c->panel_w + lx;
                 uint32_t row = (uint32_t)(ly % d->rows);
-                uint32_t shift = ly < d->rows ? 0 : 3;
-                d->map[y * c->width + x] = (row * BP * d->chain_w + col) | (shift << 24);
+                uint32_t half = ly < d->rows ? 0 : 1;
+                d->map[y * c->width + x] = (row * BP * d->chain_w + col) | (half << 24);
             }
         }
     }
@@ -63,9 +70,9 @@ void display_convert(const display_t *d, const uint8_t *src, int fmt, uint8_t *d
         const uint32_t r = d->lut[ch[d->perm[0]]], g = d->lut[ch[d->perm[1]]], b = d->lut[ch[d->perm[2]]];
         if (!(r | g | b)) continue;
         uint8_t *p = dst + (m & 0xFFFFFF);
-        const uint32_t sh = m >> 24;
+        const uint8_t *pos = d->bitpos[m >> 24];
         for (int bit = 0; bit < BP; bit++, p += stride) {
-            *p |= (uint8_t)((((r >> bit) & 1) | (((g >> bit) & 1) << 1) | (((b >> bit) & 1) << 2)) << sh);
+            *p |= (uint8_t)((((r >> bit) & 1) << pos[0]) | (((g >> bit) & 1) << pos[1]) | (((b >> bit) & 1) << pos[2]));
         }
     }
 }

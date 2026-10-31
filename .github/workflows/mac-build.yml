@@ -14,7 +14,7 @@ jobs:
 
   build:
     needs: firmware
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +30,7 @@ jobs:
         env:
           FIRMWARE_UF2: ${{ github.workspace }}/fw/receiver/build/ledwall-receiver.uf2
           SENDER_UF2: ${{ github.workspace }}/fw/sender/build/ledwall-sender.uf2
+          DIRECT_UF2: ${{ github.workspace }}/fw/sender/build/ledwall-direct.uf2
         run: ./mac-app/build.sh "$(tr -d ' \r\n' < VERSION)" "${{ github.repository }}"
 
       - uses: actions/upload-artifact@v4

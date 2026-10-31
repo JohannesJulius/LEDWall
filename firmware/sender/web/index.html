@@ -49,7 +49,7 @@
   <div class="bpm">
     <button onclick="cmd('BPM ' + (st.bpm - 1).toFixed(2))">−1</button>
     <button onclick="cmd('BPM ' + (st.bpm - 0.1).toFixed(2))">−.1</button>
-    <div class="val"><span id="bpm">–</span><small>BPM</small></div>
+    <div class="val"><span id="bpm">–</span><small>BPM <span id="link" style="color:var(--ok)"></span></small></div>
     <button onclick="cmd('BPM ' + (st.bpm + 0.1).toFixed(2))">+.1</button>
     <button onclick="cmd('BPM ' + (st.bpm + 1).toFixed(2))">+1</button>
   </div>
@@ -111,6 +111,7 @@ function apply(s) {
   if (pats) renderPatterns();
   t0 = performance.now();
   $('bpm').textContent = st.bpm.toFixed(st.bpm % 1 ? 1 : 0);
+  $('link').textContent = st.link ? '· Ableton Link' : '';
   $('auto').value = String(st.auto);
   if (document.activeElement !== $('bright')) $('bright').value = st.bright;
   $('play').textContent = st.playing ? '⏸ Pause' : '▶ Start';

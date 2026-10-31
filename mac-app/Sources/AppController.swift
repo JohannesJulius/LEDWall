@@ -16,6 +16,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var webView: WKWebView!
     private let updater = Updater()
     private let devices = DeviceManager()
+    private let udp = UDPSender()
+    private let carabiner = CarabinerClient()
     private var currentFile: URL?
     private var pageReady = false
 
@@ -45,6 +47,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
             self?.callJS("uploadProgress", [port, sent, total, state, err])
         }
         devices.start()
+        carabiner.onStatus = { [weak self] st in
+            guard let self, let d = try? JSONEncoder().encode(st),
+                  let obj = try? JSONSerialization.jsonObject(with: d) else { return }
+            self.callJS("link", [obj])
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -224,13 +231,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
             case "send": devices.send(port: port, text: body["text"] as? String ?? "")
             case "frame":
                 if let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) { devices.sendFrame(port: port, data: d) }
-            case "flash": devices.flash(volume: body["volume"] as? String ?? "")
+            case "flash": devices.flash(volume: body["volume"] as? String ?? "", variant: body["variant"] as? String ?? "")
             case "touch1200": devices.touch1200(port: port)
             case "upload":
                 if let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) {
                     devices.upload(port: port, data: d, crc: (body["crc"] as? NSNumber)?.uint32Value ?? 0)
                 }
             default: devices.pushState()
+            }
+        case "link":
+            // Ableton Link über Carabiner: start / stop
+            if (body["action"] as? String) == "start" { carabiner.start() } else { carabiner.stop() }
+        case "udp":
+            // Live-Vorschau per WLAN an den Pico 2W (Direktbetrieb)
+            if let host = body["host"] as? String, let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) {
+                udp.send(host: host, port: UInt16((body["port"] as? NSNumber)?.intValue ?? 4210), data: d)
             }
         case "openURL":
             if let s = body["url"] as? String, let url = URL(string: s), url.scheme == "https" {

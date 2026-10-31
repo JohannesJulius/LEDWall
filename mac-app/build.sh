@@ -18,7 +18,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web"
 echo "== Kompilieren ($VERSION)"
 for ARCH in arm64 x86_64; do
   xcrun swiftc -O -swift-version 5 -target "$ARCH-apple-macos12.0" \
-    -framework Cocoa -framework WebKit -framework CryptoKit -framework IOKit \
+    -framework Cocoa -framework WebKit -framework CryptoKit -framework IOKit -framework Network \
     Sources/*.swift -o "$OUT/LEDPatternStudio-$ARCH"
 done
 lipo -create -output "$APP/Contents/MacOS/LEDPatternStudio" "$OUT"/LEDPatternStudio-*
@@ -47,6 +47,15 @@ if [ -f "$FW_SENDER" ]; then
   echo "Sender-Firmware $(cat "$APP/Contents/Resources/firmware/sender-version.txt") eingebettet"
 else
   echo "WARNUNG: keine Sender-Firmware gefunden ($FW_SENDER)"
+fi
+# Direktbetrieb (Panels direkt am Pico 2W)
+FW_DIRECT="${DIRECT_UF2:-../firmware/sender/build/ledwall-direct.uf2}"
+if [ -f "$FW_DIRECT" ]; then
+  mkdir -p "$APP/Contents/Resources/firmware"
+  cp "$FW_DIRECT" "$APP/Contents/Resources/firmware/ledwall-direct.uf2"
+  echo "Direktbetrieb-Firmware eingebettet"
+else
+  echo "WARNUNG: keine Direktbetrieb-Firmware gefunden ($FW_DIRECT)"
 fi
 
 ICONSET="$OUT/AppIcon.iconset"

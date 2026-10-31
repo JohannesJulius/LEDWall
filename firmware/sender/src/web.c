@@ -2,6 +2,7 @@
 //   GET /            Bedienoberfläche
 //   GET /api/state   Zustand als JSON (?full=1 mit Patternliste)
 //   GET /api/cmd?c=  Befehl ausführen (wie über USB, z. B. "BPM 140"), Antwort = Zustand
+//   POST /api/upload?size=&crc=  Pattern-Bank hochladen (Rohdaten im Body), Antwort = Zustand + reply
 #include "web.h"
 
 #include <stdio.h>
@@ -13,8 +14,10 @@
 #include "web_index.h"
 
 typedef struct {
-    char req[600];
+    char req[1600];
     int n;
+    bool uploading;          // Body eines Uploads wird gerade empfangen
+    uint32_t body_left;
     char buf[8448];          // Kopfzeilen + JSON-Antwort
     const uint8_t *seg[2];
     uint32_t len[2];
@@ -86,12 +89,26 @@ static void respond_json(conn_t *c, bool full, const char *reply) {
     c->len[0] = (uint32_t)(h < (int)sizeof c->buf ? h : (int)sizeof c->buf - 1);
 }
 
+static uint32_t query_u32(const char *path, const char *key) {
+    const char *p = strstr(path, key);
+    return p ? (uint32_t)strtoul(p + strlen(key), NULL, 10) : 0;
+}
+
 static void handle(conn_t *c) {
+    const bool post = !strncmp(c->req, "POST ", 5);
     char *path = strchr(c->req, ' ');
     if (!path) return;
     path++;
     char *end = strchr(path, ' ');
     if (end) *end = 0;
+    if (post && !strncmp(path, "/api/upload", 11)) {
+        const uint32_t size = query_u32(path, "size="), crc = query_u32(path, "crc=");
+        const char *err = sender_upload_begin(size, crc);
+        if (err) { respond_json(c, false, err); return; }
+        c->uploading = true;
+        c->body_left = size;
+        return; // Antwort erst, wenn alle Daten da sind
+    }
     if (!strcmp(path, "/") || !strcmp(path, "/index.html")) {
         int h = snprintf(c->buf, sizeof c->buf,
                          "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n"
@@ -118,16 +135,44 @@ static err_t on_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err) 
     conn_t *c = arg;
     if (!p) { if (c) conn_close(pcb, c); else tcp_close(pcb); return ERR_OK; }
     if (!c || c->seg[0]) { tcp_recved(pcb, p->tot_len); pbuf_free(p); return ERR_OK; }
-    int n = pbuf_copy_partial(p, c->req + c->n, (u16_t)(sizeof c->req - 1 - c->n), 0);
-    c->n += n;
-    c->req[c->n] = 0;
-    tcp_recved(pcb, p->tot_len);
-    pbuf_free(p);
-    if (strstr(c->req, "\r\n\r\n") || c->n >= (int)sizeof c->req - 1) {
+    if (c->uploading) {
+        // Body direkt in den Flash schreiben (Block für Block)
+        for (struct pbuf *q = p; q; q = q->next) {
+            uint32_t n = q->len < c->body_left ? q->len : c->body_left;
+            sender_upload_data(q->payload, n);
+            c->body_left -= n;
+        }
+        tcp_recved(pcb, p->tot_len);
+        pbuf_free(p);
+    } else {
+        int n = pbuf_copy_partial(p, c->req + c->n, (u16_t)(sizeof c->req - 1 - c->n), 0);
+        int before = c->n;
+        c->n += n;
+        c->req[c->n] = 0;
+        tcp_recved(pcb, p->tot_len);
+        char *hdr_end = strstr(c->req, "\r\n\r\n");
+        if (!hdr_end && c->n < (int)sizeof c->req - 1) { pbuf_free(p); return ERR_OK; }
+        // Daten hinter dem Kopf gehören schon zum Body
+        const int body_at = hdr_end ? (int)(hdr_end - c->req) + 4 : c->n;
         handle(c);
-        if (!c->seg[0]) { conn_close(pcb, c); return ERR_OK; }
-        send_more(pcb, c);
+        if (c->uploading && body_at - before < p->tot_len) {
+            static uint8_t tmp[1600];
+            const u16_t off = (u16_t)(body_at - before), cnt = (u16_t)(p->tot_len - off);
+            const u16_t got = pbuf_copy_partial(p, tmp, cnt < sizeof tmp ? cnt : sizeof tmp, off);
+            const uint32_t use = got < c->body_left ? got : c->body_left;
+            sender_upload_data(tmp, use);
+            c->body_left -= use;
+        }
+        pbuf_free(p);
+        if (!c->uploading && !c->seg[0]) { conn_close(pcb, c); return ERR_OK; }
     }
+    if (c->uploading) {
+        const char *res = sender_upload_result();
+        if (!res && c->body_left) return ERR_OK;
+        c->uploading = false;
+        respond_json(c, false, res ? res : "ERR unvollständig");
+    }
+    send_more(pcb, c);
     return ERR_OK;
 }
 
