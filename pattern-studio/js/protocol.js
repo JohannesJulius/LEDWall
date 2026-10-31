@@ -15,7 +15,7 @@
 
   const TYPE = {
     FRAME_RGB888: 0x01, FRAME_RGB565: 0x02, SHOW: 0x03, FILL: 0x04,
-    BRIGHTNESS: 0x05, TEST: 0x06, IDENT: 0x07, BLACKOUT: 0x08,
+    BRIGHTNESS: 0x05, TEST: 0x06, IDENT: 0x07, BLACKOUT: 0x08, FRAME_PART: 0x09,
   };
   const FLAG_SHOW = 0x01;
   const ADDR_ALL = 0xff;
@@ -63,6 +63,26 @@
     return packet(addr, fmt === 'rgb888' ? TYPE.FRAME_RGB888 : TYPE.FRAME_RGB565, framePayload(floatRGB, fmt, flags));
   }
 
+  // Bild in Zeilenblöcke zerlegen, die in ein UDP-Paket passen (Live-Vorschau per WLAN), danach SHOW
+  function framePartPackets(floatRGB, w, h, maxBytes) {
+    const rows = Math.max(1, Math.floor((maxBytes || 1400) / (w * 2)));
+    const out = [];
+    for (let y0 = 0; y0 < h; y0 += rows) {
+      const n = Math.min(rows, h - y0);
+      const p = new Uint8Array(6 + n * w * 2);
+      p[0] = 0; p[1] = 1; p[2] = y0 & 0xff; p[3] = y0 >> 8; p[4] = n & 0xff; p[5] = n >> 8;
+      for (let i = 0, o = 6; i < n * w; i++) {
+        const k = (y0 * w + i) * 3;
+        const r = Math.round(floatRGB[k] * 255), g = Math.round(floatRGB[k + 1] * 255), b = Math.round(floatRGB[k + 2] * 255);
+        const v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+        p[o++] = v & 0xff; p[o++] = v >> 8;
+      }
+      out.push(packet(ADDR_ALL, TYPE.FRAME_PART, p));
+    }
+    out.push(packet(ADDR_ALL, TYPE.SHOW));
+    return out;
+  }
+
   // CRC-32 (zlib) für den Bank-Upload zum Sender
   const T32 = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -76,5 +96,5 @@
     return (c ^ 0xffffffff) >>> 0;
   }
 
-  return { TYPE, FLAG_SHOW, ADDR_ALL, crc16, crc32, packet, framePayload, frame };
+  return { TYPE, FLAG_SHOW, ADDR_ALL, crc16, crc32, packet, framePayload, frame, framePartPackets };
 });

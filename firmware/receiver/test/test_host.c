@@ -74,7 +74,7 @@ static void test_display(void) {
     for (int i = 0; i < 64 * 48; i++) {
         uint32_t m = d.map[i];
         assert(m != 0xFFFFFFFFu);
-        uint32_t k = (m & 0xFFFFFF) * 2 + (m >> 24 ? 1 : 0);
+        uint32_t k = (m & 0xFFFFFF) * 2 + (m >> 24);
         assert(!used[k]);
         used[k] = 1;
     }
@@ -88,6 +88,11 @@ static void test_display(void) {
     int ones = 0;
     for (uint32_t i = 0; i < d.buf_size; i++) ones += buf[i] != 0;
     assert(ones == DISPLAY_BITPLANES);
+    // Seengreat-Adapter bis V3.8: unteres Grün/Blau auf Bit 6/7
+    static const uint8_t up[3] = {0, 1, 2}, lo[3] = {3, 6, 7};
+    display_set_bitpos(&d, up, lo);
+    display_convert(&d, frame, FMT_RGB888, buf);
+    for (int b = 0; b < DISPLAY_BITPLANES; b++) assert(buf[(row * DISPLAY_BITPLANES + b) * 192 + col] == 0xC8);
     // Testbilder dürfen nicht über den Rand schreiben
     for (int m = 1; m < TEST_COUNT; m++) draw_test(&c, m, frame);
     draw_ident(&c, frame);

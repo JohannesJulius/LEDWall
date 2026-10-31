@@ -29,6 +29,7 @@ final class DeviceManager {
     struct Firmware: Codable {
         var receiver: FirmwareFile   // RP2040 Zero
         var sender: FirmwareFile     // Pico 2W (RP2350)
+        var direct: FirmwareFile     // Pico 2W im Direktbetrieb (Panels direkt am 2W)
     }
 
     var onChange: (([Device], Firmware) -> Void)?
@@ -57,7 +58,8 @@ final class DeviceManager {
     }
 
     lazy var firmware = Firmware(receiver: Self.fwFile("ledwall-receiver.uf2", "version.txt"),
-                                 sender: Self.fwFile("ledwall-sender.uf2", "sender-version.txt"))
+                                 sender: Self.fwFile("ledwall-sender.uf2", "sender-version.txt"),
+                                 direct: Self.fwFile("ledwall-direct.uf2", "sender-version.txt"))
 
     // Bank-Upload zum Sender: 4-KB-Blöcke, jeder wird mit "ACK n" quittiert
     private struct Upload { var data: Data; var sent: Int }
@@ -194,11 +196,12 @@ final class DeviceManager {
         conn.send("UPLOAD \(data.count) \(crc)\n")
     }
 
-    func flash(volume: String) {
+    // variant: "receiver" | "sender" | "direct" (leer = nach Chip)
+    func flash(volume: String, variant: String = "") {
         let board = devices.first(where: { $0.volume == volume })?.board ?? "RP2040"
-        let isSender = board == "RP2350"
-        let file = isSender ? firmware.sender : firmware.receiver
-        guard let src = Self.fwURL(isSender ? "ledwall-sender.uf2" : "ledwall-receiver.uf2"), file.available else {
+        let v = variant.isEmpty ? (board == "RP2350" ? "sender" : "receiver") : variant
+        let file = v == "direct" ? firmware.direct : v == "sender" ? firmware.sender : firmware.receiver
+        guard let src = Self.fwURL("ledwall-\(v).uf2"), file.available else {
             onFlash?(volume, false, "Firmware fehlt in der App")
             return
         }

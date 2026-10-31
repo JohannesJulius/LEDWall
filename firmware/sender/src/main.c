@@ -4,6 +4,7 @@
 // Wand ihr Bild über UART. Danach "SHOW" an alle: alle Wände schalten gleichzeitig um.
 // Gesteuert wird per WLAN (Weboberfläche), über USB von der App und per Taster.
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,10 @@
 #include "sender.h"
 #include "settings.h"
 #include "web.h"
+#if LEDWALL_DIRECT
+#include "direct.h"
+#include "display.h"
+#endif
 
 #ifndef FW_VERSION
 #define FW_VERSION "0.0.0-dev"
@@ -34,9 +39,10 @@
 
 #define BANK_OFFSET (1024u * 1024u)
 #define SETTINGS_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
-#define BANK_MAX (SETTINGS_OFFSET - BANK_OFFSET)
-#define PIN_TAP 15   // Taster gegen GND: tippen = Tempo, halten = Sync
-#define PIN_NEXT 14  // Taster gegen GND: nächstes Pattern (am Taktanfang)
+// Sektor davor: Panel-Einstellungen im Direktbetrieb
+#define BANK_MAX (SETTINGS_OFFSET - FLASH_SECTOR_SIZE - BANK_OFFSET)
+static uint8_t pin_tap = 15;   // Taster gegen GND: tippen = Tempo, halten = Sync
+static uint8_t pin_next = 14;  // Taster gegen GND: nächstes Pattern (am Taktanfang)
 #define MAX_WALL_BYTES (128 * 64 * 3)
 
 static settings_t set;
@@ -49,6 +55,9 @@ static uint8_t ident_secs = 5;
 
 // ---------------------------------------------------------------- Senden
 
+#if LEDWALL_DIRECT
+static uint8_t wallbuf[1][MAX_WALL_BYTES];
+#else
 enum { C_IDLE, C_FRAMES, C_SHOW, C_CTRL };
 static int cyc = C_IDLE;
 static uint8_t hdr[BANK_MAX_WALLS + OUT_CHANNELS][7];
@@ -57,10 +66,12 @@ static uint8_t wallbuf[BANK_MAX_WALLS][MAX_WALL_BYTES];
 static uint8_t ctrl[OUT_CHANNELS][12];
 static uint64_t cycle_start, last_send;
 static uint32_t cycle_us = 20000, frames_sent;
+#endif
 static float fps;
 static int last_pattern = -1;
 static uint32_t last_frame = 0xFFFFFFFF;
 
+#if !LEDWALL_DIRECT
 static uint16_t packet_header(uint8_t *h, uint8_t addr, uint8_t type, uint16_t len, uint8_t flags) {
     h[0] = LW_SYNC0; h[1] = LW_SYNC1; h[2] = addr; h[3] = type;
     h[4] = (uint8_t)(len & 0xFF); h[5] = (uint8_t)(len >> 8); h[6] = flags;
@@ -165,6 +176,40 @@ static void engine_poll(uint64_t now) {
     if (player_update(&pl, now, bank.count)) last_frame = 0xFFFFFFFF;
     send_frame(now);
 }
+#else
+// Direktbetrieb: Frame wählen, auf die Wandgröße bringen und selbst anzeigen
+static void engine_poll(uint64_t now) {
+    static uint64_t fps_t;
+    static uint32_t fps_frames;
+    direct_poll(now);
+    if (now - fps_t > 1000000) {
+        fps = (float)(direct_frames() - fps_frames) * 1e6f / (float)(now - fps_t);
+        fps_frames = direct_frames();
+        fps_t = now;
+    }
+    if (ident_req) { ident_req = false; direct_ident(ident_secs); }
+    if (bright_dirty) { bright_dirty = false; direct_brightness(set.brightness); last_frame = 0xFFFFFFFF; }
+    if (blackout_dirty) {
+        blackout_dirty = false;
+        if (blackout) direct_blackout();
+        last_frame = 0xFFFFFFFF;
+    }
+    if (!bank_ok || blackout || direct_busy(now)) { last_frame = 0xFFFFFFFF; return; }
+    if (player_update(&pl, now, bank.count)) last_frame = 0xFFFFFFFF;
+    const uint32_t fi = bank_frame_index(&bank, pl.pattern, player_beat(&pl, now));
+    if (fi == last_frame && pl.pattern == last_pattern) return;
+    last_frame = fi;
+    last_pattern = pl.pattern;
+    // erste Wand des Raum-Setups (oder die ganze Leinwand) auf die Panelgröße abbilden
+    bank_wall_t w = {0};
+    if (bank.wall_count) w = bank.walls[0];
+    else { w.rw = (uint16_t)(bank.width * 16); w.rh = (uint16_t)(bank.height * 16); }
+    w.width = direct_width();
+    w.height = direct_height();
+    bank_sample_wall(&bank, bank_frame(&bank, pl.pattern, fi), &w, wallbuf[0]);
+    direct_show(wallbuf[0], bank.bpp == 3 ? FMT_RGB888 : FMT_RGB565);
+}
+#endif
 
 // ---------------------------------------------------------------- Flash
 
@@ -179,8 +224,10 @@ static void flash_job(void *p) {
 }
 
 static bool flash_write_sector(uint32_t off, const uint8_t *data, uint32_t len) {
+#if !LEDWALL_DIRECT
     // Die DMA liest Bilder direkt aus dem Flash: erst fertig senden lassen, dann schreiben
     while (!out_idle()) out_poll();
+#endif
     flash_job_t j = {off, data, len};
     return flash_safe_execute(flash_job, &j, 1000) == PICO_OK;
 }
@@ -206,11 +253,12 @@ static bool save_settings(void) {
 // ---------------------------------------------------------------- Upload der Bank (USB)
 
 static struct {
-    bool active;
+    bool active, usb;
     uint32_t size, crc, got, fill;
     uint64_t last;
     uint8_t buf[FLASH_SECTOR_SIZE];
 } up;
+static char up_result[96];
 
 static void upload_flush(void) {
     const uint32_t sector = (up.got - 1) / FLASH_SECTOR_SIZE;
@@ -224,17 +272,39 @@ static void upload_byte(uint8_t b) {
     up.got++;
     if (up.fill == FLASH_SECTOR_SIZE || up.got == up.size) {
         upload_flush();
-        printf("ACK %lu\n", (unsigned long)up.got);
+        if (up.usb) printf("ACK %lu\n", (unsigned long)up.got);
     }
     if (up.got == up.size) {
         up.active = false;
         const uint32_t crc = crc32_update(0, flash_ptr(BANK_OFFSET), up.size);
         load_bank();
-        if (crc != up.crc) printf("ERR Prüfsumme\n");
-        else if (!bank_ok) printf("ERR %s\n", bank_err);
-        else printf("OK\n");
+        if (crc != up.crc) snprintf(up_result, sizeof up_result, "ERR Prüfsumme");
+        else if (!bank_ok) snprintf(up_result, sizeof up_result, "ERR %s", bank_err);
+        else snprintf(up_result, sizeof up_result, "OK");
+        if (up.usb) printf("%s\n", up_result);
     }
 }
+
+// Upload über WLAN (web.c): Start, Daten, Ergebnis
+const char *sender_upload_begin(uint32_t size, uint32_t crc) {
+    if (up.active) return "ERR Upload läuft bereits";
+    if (size < 64 || size > BANK_MAX) return "ERR Größe";
+    bank_ok = false;
+    memset(&up, 0, offsetof(typeof(up), buf));
+    up.active = true;
+    up.size = size;
+    up.crc = crc;
+    up.last = time_us_64();
+    up_result[0] = 0;
+    return NULL;
+}
+
+void sender_upload_data(const uint8_t *data, uint32_t len) {
+    up.last = time_us_64();
+    while (len-- && up.active) upload_byte(*data++);
+}
+
+const char *sender_upload_result(void) { return up.active ? NULL : up_result; }
 
 // ---------------------------------------------------------------- WLAN
 
@@ -333,6 +403,9 @@ int sender_state_json(char *out, size_t cap, bool full) {
         bank_ok ? "true" : "false", bank_ok ? "" : bank_err, bank_ok ? bank.count : 0, bank.width, bank.height,
         bank.ref_bpm, bank.fpb, bank.wall_count, bank.mode, (unsigned long)(bank_ok ? bank.size : 0),
         (unsigned long)BANK_MAX, wifi_state(), set.wifi_mode, ssid, ip_str, apssid, stassid);
+#if LEDWALL_DIRECT
+    if (n > 0 && (size_t)n < cap) n += direct_json(out + n, cap - n);
+#endif
     if (full && bank_ok && n > 0) {
         n += snprintf(out + n, cap - n, ",\"patterns\":[");
         for (int i = 0; i < bank.count && n > 0 && (size_t)n + 40 < cap; i++) {
@@ -385,6 +458,9 @@ const char *sender_command(char *line, bool from_usb, char *reply, size_t cap) {
     const int count = bank_ok ? bank.count : 0;
     snprintf(reply, cap, "OK");
 
+#if LEDWALL_DIRECT
+    if (direct_command(line, arg, reply, cap)) return reply;
+#endif
     if (!strcmp(line, "INFO")) {
         strcpy(reply, "INFO ");
         sender_state_json(reply + 5, cap - 5, false);
@@ -445,19 +521,28 @@ const char *sender_command(char *line, bool from_usb, char *reply, size_t cap) {
     } else if (!strcmp(line, "BAUD")) {
         uint32_t b = (uint32_t)strtoul(arg, NULL, 10);
         if (b < 9600 || b > 7800000) snprintf(reply, cap, "ERR Baudrate");
-        else { set.baud = b; out_set_baud(b); }
+        else {
+            set.baud = b;
+#if !LEDWALL_DIRECT
+            out_set_baud(b);
+#endif
+        }
     } else if (!strcmp(line, "SAVE")) {
         set.bpm = (float)pl.bpm;
         set.auto_bars = (int16_t)pl.auto_bars;
-        snprintf(reply, cap, save_settings() ? "OK" : "ERR Flash");
+        bool ok = save_settings();
+#if LEDWALL_DIRECT
+        ok = direct_save() && ok;
+#endif
+        snprintf(reply, cap, ok ? "OK" : "ERR Flash");
     } else if (!strcmp(line, "UPLOAD") && from_usb) {
         unsigned long size = 0, crc = 0;
         if (sscanf(arg, "%lu %lu", &size, &crc) != 2 || size < 64 || size > BANK_MAX) {
             snprintf(reply, cap, "ERR Größe (max. %lu Byte)", (unsigned long)BANK_MAX);
         } else {
-            bank_ok = false; // Wiedergabe stoppen, der Flash wird überschrieben
-            up = (typeof(up)){.active = true, .size = size, .crc = crc, .last = now};
-            snprintf(reply, cap, "READY");
+            const char *e = sender_upload_begin(size, crc);
+            if (e) snprintf(reply, cap, "%s", e);
+            else { up.usb = true; snprintf(reply, cap, "READY"); }
         }
     } else if (!strcmp(line, "BOOTSEL") && from_usb) {
         printf("OK\n");
@@ -488,7 +573,8 @@ static void usb_poll(uint64_t now) {
     if (up.active && now - up.last > 5000000) {
         up.active = false;
         load_bank();
-        printf("ERR Upload abgebrochen (Zeitüberschreitung)\n");
+        snprintf(up_result, sizeof up_result, "ERR Upload abgebrochen (Zeitüberschreitung)");
+        if (up.usb) printf("%s\n", up_result);
     }
     while ((got = stdio_get_until(buf, sizeof buf, get_absolute_time())) > 0) {
         for (int i = 0; i < got; i++) {
@@ -517,7 +603,7 @@ static void usb_poll(uint64_t now) {
 static void buttons_poll(uint64_t now) {
     static bool tap_down, next_down, held;
     static uint64_t tap_t, next_t;
-    const bool t = !gpio_get(PIN_TAP), nx = !gpio_get(PIN_NEXT);
+    const bool t = !gpio_get(pin_tap), nx = !gpio_get(pin_next);
     if (t && !tap_down && now - tap_t > 30000) { tap_down = true; tap_t = now; held = false; player_tap(&pl, now); }
     if (t && tap_down && !held && now - tap_t > 800000) { held = true; pl.tap_count = 0; player_sync(&pl, now); }
     if (!t && tap_down && now - tap_t > 30000) tap_down = false;
@@ -548,12 +634,22 @@ int main(void) {
 
     player_init(&pl, set.bpm);
     pl.auto_bars = set.auto_bars;
-    for (uint p = PIN_NEXT; p <= PIN_TAP; p++) { gpio_init(p); gpio_set_dir(p, GPIO_IN); gpio_pull_up(p); }
-
+#if LEDWALL_DIRECT
+    direct_init(); // vor dem WLAN: belegt PIO0 für die Panels
+    pin_tap = direct_buttons()[0];
+    pin_next = direct_buttons()[1];
+#else
     out_init(set.baud);
+#endif
+    const uint8_t btns[2] = {pin_tap, pin_next};
+    for (int i = 0; i < 2; i++) { gpio_init(btns[i]); gpio_set_dir(btns[i], GPIO_IN); gpio_pull_up(btns[i]); }
+
     load_bank();
     wifi_start();
     web_init();
+#if LEDWALL_DIRECT
+    direct_udp_init();
+#endif
 
     for (;;) {
         const uint64_t now = time_us_64();

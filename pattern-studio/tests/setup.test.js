@@ -61,3 +61,27 @@ test('Bank mit Raum-Setup: Kopf enthält Setup-Offset und Gesamtgröße', () => 
   assert.strictEqual(buf[setup + 9], 1);      // Ausgang 2
   assert.strictEqual(dv.getUint16(setup + 8 + 10, true), 64 * 16);
 });
+
+test('Live-Vorschau per WLAN: Zeilenblöcke passen in ein UDP-Paket und decken das Bild ab', () => {
+  const W = 64, H = 48;
+  const img = new Float32Array(W * H * 3);
+  img[(47 * W + 63) * 3 + 2] = 1; // letztes Pixel blau
+  const pks = P.framePartPackets(img, W, H);
+  const parts = pks.slice(0, -1);
+  assert.strictEqual(pks[pks.length - 1][3], P.TYPE.SHOW);
+  let rows = 0;
+  for (const pk of parts) {
+    assert.ok(pk.length <= 1472, 'Paket zu groß: ' + pk.length);
+    assert.strictEqual(pk[3], P.TYPE.FRAME_PART);
+    const len = pk[4] | (pk[5] << 8);
+    assert.strictEqual(pk.length, 8 + len);
+    const crc = P.crc16(pk.subarray(2, 6 + len));
+    assert.strictEqual(pk[6 + len] | (pk[7 + len] << 8), crc);
+    const y0 = pk[8] | (pk[9] << 8), n = pk[10] | (pk[11] << 8);
+    assert.strictEqual(y0, rows);
+    rows += n;
+  }
+  assert.strictEqual(rows, H);
+  const last = parts[parts.length - 1];
+  assert.strictEqual(last[last.length - 4] | (last[last.length - 3] << 8), 0x001f); // RGB565 blau
+});

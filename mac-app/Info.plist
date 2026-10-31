@@ -17,5 +17,12 @@
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHumanReadableCopyright</key><string>© Johannes Julius</string>
   <key>LEDUpdateRepo</key><string>__REPO__</string>
+  <key>NSLocalNetworkUsageDescription</key><string>LED Pattern Studio steuert den Pico 2W über das lokale WLAN.</string>
+  <key>NSBonjourServices</key><array><string>_http._tcp</string></array>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key><true/>
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
 </dict>
 </plist>
