@@ -52,6 +52,7 @@ static const char *bank_err = "keine Bank";
 static player_t pl;
 static bool blackout, bright_dirty = true, blackout_dirty, ident_req;
 static uint8_t ident_secs = 5;
+static uint64_t link_until;   // bis wann Tempo/Beat von Ableton Link (über die App) gelten
 
 // ---------------------------------------------------------------- Senden
 
@@ -394,12 +395,12 @@ int sender_state_json(char *out, size_t cap, bool full) {
     int n = snprintf(out, cap,
         "{\"fw\":\"ledwall-tx\",\"ver\":\"%s\",\"uid\":\"%s\",\"board\":\"pico2w\","
         "\"bpm\":%.2f,\"beat\":%.4f,\"playing\":%s,\"pattern\":%d,\"patternName\":%s,\"next\":%d,\"auto\":%d,"
-        "\"bright\":%u,\"blackout\":%s,\"fps\":%.1f,\"baud\":%lu,"
+        "\"bright\":%u,\"blackout\":%s,\"fps\":%.1f,\"baud\":%lu,\"link\":%s,"
         "\"bank\":{\"ok\":%s,\"error\":\"%s\",\"patterns\":%u,\"w\":%u,\"h\":%u,\"refBpm\":%.1f,\"fpb\":%u,"
         "\"walls\":%u,\"mode\":%u,\"size\":%lu,\"max\":%lu},"
         "\"wifi\":{\"state\":\"%s\",\"mode\":%u,\"ssid\":%s,\"ip\":\"%s\",\"apSsid\":%s,\"staSsid\":%s}",
         FW_VERSION, uid, pl.bpm, player_beat(&pl, now), pl.playing ? "true" : "false", pl.pattern, name, pl.next,
-        pl.auto_bars, set.brightness, blackout ? "true" : "false", fps, (unsigned long)set.baud,
+        pl.auto_bars, set.brightness, blackout ? "true" : "false", fps, (unsigned long)set.baud, now < link_until ? "true" : "false",
         bank_ok ? "true" : "false", bank_ok ? "" : bank_err, bank_ok ? bank.count : 0, bank.width, bank.height,
         bank.ref_bpm, bank.fpb, bank.wall_count, bank.mode, (unsigned long)(bank_ok ? bank.size : 0),
         (unsigned long)BANK_MAX, wifi_state(), set.wifi_mode, ssid, ip_str, apssid, stassid);
@@ -471,6 +472,16 @@ const char *sender_command(char *line, bool from_usb, char *reply, size_t cap) {
         double v = atof(arg);
         if (v < 20 || v > 300) snprintf(reply, cap, "ERR BPM 20..300");
         else player_set_bpm(&pl, v, now);
+    } else if (!strcmp(line, "LINK")) {
+        // LINK <bpm> <beat>: Ableton-Link-Takt von der App (Carabiner), alle paar hundert ms
+        double bpm = 0, beat = 0;
+        if (sscanf(arg, "%lf %lf", &bpm, &beat) != 2 || bpm < 20 || bpm > 999) {
+            snprintf(reply, cap, "ERR LINK <bpm> <beat>");
+        } else {
+            player_link(&pl, bpm, beat, now);
+            link_until = now + 3000000;
+            if (from_usb) reply[0] = 0; // über USB keine Antwort, sonst stören die OKs
+        }
     } else if (!strcmp(line, "TAP")) {
         player_tap(&pl, now);
     } else if (!strcmp(line, "SYNC")) {

@@ -70,6 +70,7 @@ Textzeilen wie beim Empfänger (siehe [protocol.md](protocol.md)):
 | `INFO` | `INFO {json}`: BPM, Beat, Pattern, Bank, WLAN, fps |
 | `PATTERNS` | `STATE {json}` wie INFO, plus Patternliste |
 | `BPM 140` · `TAP` · `SYNC` · `NUDGE 0.05` | Tempo und Phase |
+| `LINK <bpm> <beat>` | Tempo und Beat von Ableton Link (schickt die App, siehe [ableton-link.md](ableton-link.md)) |
 | `PATTERN 3 [now]` · `NEXT` · `PREV` · `AUTO 16` | Patterns |
 | `PLAY` · `STOP` · `BLACKOUT 1` · `BRIGHT 200` · `IDENT 5` | Wiedergabe |
 | `WIFI mode=ap\|sta ssid=… pass=… apssid=… appass=…` | WLAN (URL-kodiert, gilt nach Neustart) |

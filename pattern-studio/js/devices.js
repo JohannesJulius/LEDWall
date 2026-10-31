@@ -859,7 +859,24 @@
     }
   }, 3000);
 
-  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, state: st };
+  // Für link.js: alle Pico 2W, die gerade erreichbar sind
+  function senders() {
+    return st.devices.filter((d) => d.kind === 'sender' && st.info[d.port] && !(d.net && st.netOffline[d.host]));
+  }
+
+  // Taktmeldung ohne Antwort-Auswertung (zählt nicht als Befehl). Bei WLAN wird die Laufzeit gemessen.
+  const netRtt = {};
+  function sendQuiet(port, makeText) {
+    if (!isNet(port)) { A.nativePost('device', { action: 'send', port, text: makeText(0.004) }); return; }
+    const host = hostOf(port);
+    const lat = (netRtt[host] || 40) / 2000;
+    const t0 = performance.now();
+    fetch('http://' + host + '/api/cmd?c=' + encodeURIComponent(makeText(lat)), { cache: 'no-store' })
+      .then(() => { const rtt = performance.now() - t0; netRtt[host] = netRtt[host] ? netRtt[host] * 0.8 + rtt * 0.2 : rtt; })
+      .catch(() => {});
+  }
+
+  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, senders, sendQuiet, state: st };
 
   document.getElementById('btnDevRescan').onclick = () => A.nativePost && A.NATIVE && A.nativePost('device', { action: 'state' });
   st.devices = netDevices();

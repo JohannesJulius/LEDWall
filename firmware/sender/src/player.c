@@ -56,6 +56,18 @@ void player_nudge(player_t *p, double beats, uint64_t now) {
     p->beat0 += beats;
 }
 
+void player_link(player_t *p, double bpm, double beat, uint64_t now) {
+    if (bpm < 20) bpm = 20;
+    if (bpm > 300) bpm = 300;
+    const double cur = player_beat(p, now);
+    const double diff = beat - cur;
+    p->bpm = bpm;
+    p->t0 = now;
+    p->playing = true;
+    p->tap_count = 0;
+    p->beat0 = fabs(diff) > 0.5 ? beat : cur + diff * 0.3;
+}
+
 void player_select(player_t *p, int index, bool immediately, int count) {
     if (count <= 0) return;
     index = ((index % count) + count) % count;

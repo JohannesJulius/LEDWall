@@ -67,6 +67,7 @@ dann unter **Actions → Lauf → Artifacts**. Lokal auf dem Mac geht es mit
 | [`firmware/sender/`](firmware/sender/) | Sender-Firmware für den Pico 2W (C, Pico SDK, WLAN + Weboberfläche) |
 | [`firmware/common/`](firmware/common/) | Gemeinsamer Protokoll-Code |
 | [`docs/sender.md`](docs/sender.md) | Anschlüsse, Bedienung und Ablauf des Senders |
+| [`docs/ableton-link.md`](docs/ableton-link.md) | Tempo und Beat von Ableton Link über Carabiner |
 | [`docs/direct-mode.md`](docs/direct-mode.md) | Testmodus: Panels direkt am Pico 2W (Seengreat-Adapter), alles über WLAN |
 | [`docs/receiver.md`](docs/receiver.md) | Verkabelung und Einrichtung des Empfängers |
 | [`docs/protocol.md`](docs/protocol.md) | Protokoll Sender → Empfänger und USB-Befehle |

@@ -105,6 +105,7 @@
     devices(list, fw) { if (window.LEDDevices) window.LEDDevices.onDevices(list, fw); },
     deviceLine(port, line) { if (window.LEDDevices) window.LEDDevices.onLine(port, line); },
     flashResult(r) { if (window.LEDDevices) window.LEDDevices.onFlash(r); },
+    link(s) { if (window.LEDLink) window.LEDLink.onStatus(s); },
     uploadProgress(port, sent, total, st2, err) { if (window.LEDDevices) window.LEDDevices.onUpload(port, sent, total, st2, err); },
   };
 
@@ -710,12 +711,21 @@
 
   let lastTs = 0, lastBeatInt = -1, lastThumb = 0;
   const frameHooks = [];
+  let externalClock = null;
   const dots = $('beatDots').children;
 
   function frame(ts) {
     const dt = lastTs ? Math.min(0.1, (ts - lastTs) / 1000) : 0;
     lastTs = ts;
-    if (state.playing) state.beat += (dt * state.bpm) / 60;
+    // Externe Uhr (Ableton Link) hat Vorrang vor dem eigenen Transport
+    const ext = externalClock && externalClock();
+    if (ext) {
+      state.beat = ext.beat;
+      if (Math.abs(state.bpm - ext.bpm) > 0.004) {
+        state.bpm = ext.bpm;
+        if (document.activeElement !== $('bpmInput')) $('bpmInput').value = Math.round(ext.bpm * 10) / 10;
+      }
+    } else if (state.playing) state.beat += (dt * state.bpm) / 60;
     const p = pattern();
     const L = p ? p.loopBeats : 4;
     const lb = mod(state.beat, L);
@@ -1199,6 +1209,7 @@
     view: () => state.view,
     changed: (opts) => changed(opts),
     onFrame: (fn) => frameHooks.push(fn),
+    setExternalClock: (fn) => { externalClock = fn; },
     onView: (fn) => viewHooks.push(fn),
     selectPattern: (i) => selectPattern(i),
   };
