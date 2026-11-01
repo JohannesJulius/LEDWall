@@ -52,7 +52,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
             guard let self else { return }
             // Ohne Start/Stop-Sync (ältere Carabiner-Version) gilt Link als „läuft“
             self.lights.updateClock(connected: st.connected, bpm: st.bpm, beat: st.beat,
-                                    playing: st.hasPlaying ? st.playing : true)
+                                    playing: st.hasPlaying ? st.playing : true,
+                                    start: st.exact ? st.start : nil)
             guard let d = try? JSONEncoder().encode(st),
                   let obj = try? JSONSerialization.jsonObject(with: d) else { return }
             self.callJS("link", [obj])

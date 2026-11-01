@@ -62,9 +62,25 @@
     E.bridgeBtn = el('button', { onclick: () => post({ action: 'enable', value: !(bridge && bridge.enabled) }) });
     E.mult = el('div', { class: 'seg' }, MULTS.map((m) => el('button', { 'data-m': m, onclick: () => post({ action: 'set', multiplier: m }) }, m + '×')));
     E.msg = el('code', { class: 'light-msg' });
+    E.track = el('div', { class: 'track-state' });
+    E.barNum = el('div', { class: 'bar-num' });
+    E.dots = el('div', { class: 'beat-big' }, [0, 1, 2, 3].map((i) => el('i', null, String(i + 1))));
+    E.playMode = el('div', { class: 'seg' },
+      el('button', { 'data-pm': 'link', onclick: () => post({ action: 'set', playMode: 'link' }) }, 'Start/Stop von Link'),
+      el('button', { 'data-pm': 'always', onclick: () => post({ action: 'set', playMode: 'always' }) }, 'Immer läuft'));
+    E.offset = el('span', { class: 'muted', style: 'font-size:11px' });
+    E.trackHint = el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' });
     return el('div', { class: 'card' },
       el('h3', null, 'Takt'),
+      el('div', { class: 'beat-live' }, E.track, E.dots, E.barNum),
+      E.trackHint,
       el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Ableton Link'), el('div', null, E.linkText, E.linkPill)),
+      el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Track läuft laut'), E.playMode, null),
+      el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Takt-Anfang'),
+        el('div', null,
+          el('button', { onclick: setDownbeat, title: 'Genau auf der „1“ des Tracks klicken' }, 'Jetzt ist die 1'), ' ',
+          el('button', { onclick: () => setOffset(0) }, 'Zurücksetzen')),
+        E.offset),
       el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Licht-Brücke'), el('div', null, E.bridgeBtn)),
       el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Tempo-Faktor'), E.mult,
         el('span', { class: 'muted', style: 'font-size:11px' }, 'Relais + HUB75')),
@@ -192,7 +208,7 @@
     if (!link.connected) setPill(E.linkPill, 'warn', (lw || (bridge && bridge.enabled)) ? 'nicht verbunden' : 'aus');
     else setPill(E.linkPill, linkPlaying() ? 'ok' : 'info', linkPlaying() ? 'läuft' : 'gestoppt');
     E.linkText.textContent = link.connected
-      ? link.bpm.toFixed(2) + ' BPM · Beat ' + ((link.beat % 4 + 4) % 4 + 1).toFixed(0) + ' · ' + link.peers + ' Teilnehmer' + (link.startedByApp ? ' · Carabiner von der App gestartet' : '')
+      ? link.bpm.toFixed(2) + ' BPM · ' + link.peers + ' Teilnehmer' + (link.exact ? '' : ' · Beat ungenau (ältere Carabiner-Version)') + (link.startedByApp ? ' · Carabiner von der App gestartet' : '')
       : (link.error || 'Carabiner wird automatisch verbunden bzw. gestartet, sobald Link oder die Licht-Brücke an ist.');
 
     const on = !!(bridge && bridge.enabled);
@@ -201,6 +217,14 @@
     E.bridgeBtn.disabled = !A.NATIVE || !bridge;
     for (const b of E.mult.children) b.classList.toggle('on', !!bridge && +b.dataset.m === bridge.multiplier);
     E.msg.textContent = bridge && bridge.running && bridge.message ? bridge.message : '–';
+    for (const b of E.playMode.children) b.classList.toggle('on', playMode() === b.dataset.pm);
+    E.playMode.style.opacity = A.NATIVE && bridge ? '' : '.5';
+    E.offset.textContent = beatOffset() ? 'Versatz ' + beatOffset() + ' Beat' + (beatOffset() > 1 ? 's' : '') : 'kein Versatz';
+    E.trackHint.textContent = !link.connected ? ''
+      : playMode() === 'always' ? 'Start/Stop wird ignoriert – es gelten immer die aktiven Patterns.'
+        : !link.hasPlaying ? 'Diese Carabiner-Version meldet kein Start/Stop – der Track gilt immer als laufend.'
+          : !link.playing ? 'Läuft der Track, aber hier steht „gestoppt“? Dann gibt deine DJ-Software Start/Stop nicht über Link weiter – oben „Immer läuft“ wählen.' : '';
+    updateBeat();
 
     // Relais / HUB75
     if (bridge) {
@@ -249,6 +273,53 @@
     badge.textContent = '●';
   }
 
+  // ---------------------------------------------------------------- Beat-Anzeige
+
+  const playMode = () => (bridge && bridge.playMode) || 'link';
+  const beatOffset = () => (bridge && bridge.beatOffset) || 0;
+  function trackPlaying() {
+    if (playMode() === 'always') return true;
+    return linkPlaying();
+  }
+  // aktuelle Beat-Position inkl. Versatz (null ohne Link)
+  function beatNow() {
+    if (!link.connected || !(link.bpm > 0) || !L()) return null;
+    return L().beatNow() + beatOffset();
+  }
+
+  function updateBeat() {
+    if (!E.track) return;
+    const b = beatNow();
+    const playing = link.connected && trackPlaying();
+    E.track.className = 'track-state ' + (!link.connected ? 'off' : playing ? 'on' : 'stop');
+    E.track.textContent = !link.connected ? '– kein Link' : playing ? '▶ Track läuft' : '■ Track gestoppt';
+    if (b == null) {
+      E.barNum.textContent = '–';
+      for (const d of E.dots.children) d.className = '';
+      return;
+    }
+    const inBar = ((b % 4) + 4) % 4;
+    const cur = Math.floor(inBar);
+    const frac = inBar - cur;
+    E.barNum.textContent = 'Takt ' + (Math.floor(b / 4) + 1) + ' · Beat ' + (cur + 1) + ' · ' + link.bpm.toFixed(1) + ' BPM';
+    [...E.dots.children].forEach((d, i) => {
+      d.className = i === cur ? (frac < 0.25 ? 'hit' : 'cur') : '';
+      if (i === 0) d.classList.add('one');
+    });
+  }
+
+  function setOffset(v) {
+    post({ action: 'set', beatOffset: ((v % 4) + 4) % 4 });
+  }
+  // Klick genau auf der „1“: Versatz so wählen, dass die nächstgelegene Zählzeit zur 1 wird
+  function setDownbeat() {
+    if (!link.connected || !L()) { A.toast('Ableton Link ist nicht verbunden'); return; }
+    const raw = L().beatNow();
+    const nearest = Math.round(raw);
+    setOffset((4 - (((nearest % 4) + 4) % 4)) % 4);
+    A.toast('Takt-Anfang gesetzt – diese Zählzeit ist jetzt die 1');
+  }
+
   // 64×48-Wand: bei Play/Stop von Link aktives bzw. Idle-Pattern wählen (zum nächsten Takt)
   let lastAuto = {};
   function autoSwitch() {
@@ -258,7 +329,7 @@
     for (const s of d.senders()) {
       const i = d.info(s.port);
       if (!i || !i.bank || !i.bank.ok) continue;
-      const want = Math.min(linkPlaying() ? bw.active : bw.idle, i.bank.patterns - 1);
+      const want = Math.min(trackPlaying() ? bw.active : bw.idle, i.bank.patterns - 1);
       if (want < 0 || i.pattern === want || i.next === want) continue;
       if (lastAuto[s.port] && now - lastAuto[s.port] < 1500) continue;
       lastAuto[s.port] = now;
@@ -277,9 +348,9 @@
   }
 
   function onLink(s) {
-    const was = linkPlaying();
+    const was = trackPlaying();
     Object.assign(link, s);
-    if (was !== linkPlaying()) lastAuto = {};
+    if (was !== trackPlaying()) lastAuto = {};
     autoSwitch();
     if (A.view() === 'lights') update();
   }
@@ -295,6 +366,8 @@
     if (signature() !== sig) render(); else update();
   }, 300);
 
+  setInterval(() => { if (A.view() === 'lights') updateBeat(); }, 40);
+
   A.onView((v) => {
     if (v !== 'lights') return;
     if (A.NATIVE) post({ action: 'state' });
@@ -302,5 +375,5 @@
   });
   if (A.NATIVE) post({ action: 'state' });
 
-  window.LEDLights = { onState, onLink };
+  window.LEDLights = { onState, onLink, beatOffset, trackPlaying };
 })();

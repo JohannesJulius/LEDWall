@@ -15,6 +15,18 @@ frühere Python-App „DJ Light Bridge“.
   Versionen gilt Link immer als „läuft“.
 - Rekordbox braucht nichts Eigenes: Link einschalten, dann kommen Tempo und Beat über Link an.
 
+## Track-Anzeige und Takt-Anfang
+
+- Oben im Tab steht groß **▶ Track läuft** oder **■ Track gestoppt**, daneben die Zählzeiten 1–4
+  und Takt/Beat live. Der Link-Knopf in der Kopfleiste zeigt dasselbe als ▶ / ■.
+- „Läuft“ kommt aus dem Start/Stop von Link. Gibt die DJ-Software das nicht weiter, steht dort
+  immer „gestoppt“. Dann **Track läuft laut → Immer läuft** wählen.
+- Die Beat-Position wird aus Carabiners `:start` und der Link-Uhr des Macs berechnet und ist damit
+  ohne Übertragungsverzögerung. Bei älteren Carabiner-Versionen wird hochgerechnet.
+- **Jetzt ist die 1**: genau auf der 1 des Tracks klicken. Die nächstgelegene Zählzeit wird zur 1
+  (Versatz 0–3 Beats). Das gilt für Relais, HUB75-Wand (`BEAT`/`PHASE`) und die 64×48-Wand.
+  **Zurücksetzen** stellt den Versatz auf 0.
+
 ## LED-Wand 64×48 (Pico 2W + RP2040 Zero)
 
 Der Pico 2W läuft hier mit der normalen **Sender-Firmware** (`ledwall-sender.uf2`), jede Wand hat

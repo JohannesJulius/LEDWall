@@ -23,6 +23,8 @@ final class CarabinerClient {
         var peers = 0
         var bpm = 0.0
         var beat = 0.0
+        var start = 0.0         // Link-Zeit (µs) von Beat 0, aus :start
+        var exact = false       // Beat wird aus :start und der Link-Uhr berechnet
         var playing = false
         var hasPlaying = false
         var startedByApp = false
@@ -86,6 +88,8 @@ final class CarabinerClient {
 
     private func publish() {
         status.startedByApp = launcher.startedByUs
+        // Beat genau für „jetzt“ berechnen (gleiche Uhr wie Link: mach_absolute_time)
+        if status.exact, status.connected, let b = LinkClock.beat(start: status.start, bpm: status.bpm) { status.beat = b }
         onStatus?(status)
     }
 
@@ -123,6 +127,7 @@ final class CarabinerClient {
         conn?.cancel()
         conn = nil
         status.connected = false
+        status.exact = false
         status.peers = 0
         status.error = msg
         reconnectAt = Date().addingTimeInterval(2)
@@ -171,6 +176,14 @@ final class CarabinerClient {
         }
         if let t = token("bpm"), let v = Double(t) { status.bpm = v }
         if let t = token("beat"), let v = Double(t) { status.beat = v }
+        if let t = token("start"), let v = Double(t) { status.start = v }
+        // :start nur nutzen, wenn die daraus berechnete Position zur gemeldeten passt
+        // (gleiche Uhr wie Carabiner). Sonst bleibt es beim gemeldeten :beat.
+        if let b = LinkClock.beat(start: status.start, bpm: status.bpm) {
+            status.exact = abs(b - status.beat) < 0.25
+        } else {
+            status.exact = false
+        }
         if let t = token("peers"), let v = Double(t) { status.peers = Int(v) }
         if let t = token("playing") {
             status.playing = t == "true"
