@@ -23,5 +23,13 @@ check(m == "BPM=256.00,BEAT=11.0000,PHASE=3.0000,PLAYING=1,APAT=3,IPAT=5,WAPAT=1
 let m2 = LightMessage.format(bpm: 140.123, beat: 1.23456, playing: false, multiplier: 1, apat: 16, ipat: 1, wapat: 10, wipat: 14)
 check(m2 == "BPM=140.12,BEAT=1.2346,PHASE=1.2346,PLAYING=0,APAT=16,IPAT=1,WAPAT=10,WIPAT=14", "Nachricht: \(m2)")
 
+check(LinkClock.beat(start: 1_000_000, bpm: 120, at: 3_000_000).map { near($0, 4.0) } ?? false, "Beat aus :start")
+check(LinkClock.beat(start: 0, bpm: 120) == nil, "ohne :start kein Beat")
+
+let old = #"{"enabled":true,"multiplier":2,"relayActive":3,"relayIdle":5,"wallActive":1,"wallIdle":5,"destinations":[]}"#
+if let st = try? JSONDecoder().decode(LightBridge.Settings.self, from: Data(old.utf8)) {
+    check(st.multiplier == 2 && st.playMode == "link" && st.beatOffset == 0, "alte Einstellungen werden gelesen")
+} else { check(false, "alte Einstellungen werden gelesen") }
+
 if failures > 0 { print("\(failures) Fehler"); exit(1) }
 print("Alle Tests bestanden")

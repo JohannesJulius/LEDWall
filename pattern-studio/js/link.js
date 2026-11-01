@@ -12,6 +12,9 @@
   const $ = (id) => document.getElementById(id);
   const st = { enabled: false, linkWanted: false, connected: false, peers: 0, bpm: 0, beat: 0, playing: false, hasPlaying: false, error: '', t: 0 };
 
+  // Versatz für die „1“ des Takts (Tab Licht, „Jetzt ist die 1“)
+  const offset = () => (window.LEDLights ? window.LEDLights.beatOffset() : 0);
+
   function beatNow(extraSeconds) {
     return st.beat + ((performance.now() - st.t) / 60000 + (extraSeconds || 0) / 60) * st.bpm;
   }
@@ -32,7 +35,8 @@
   function render() {
     const b = $('btnLink');
     b.classList.toggle('active', active());
-    b.textContent = !st.linkWanted ? 'Link' : active() ? 'Link · ' + st.peers : 'Link …';
+    const playing = window.LEDLights ? window.LEDLights.trackPlaying() : (st.hasPlaying ? st.playing : true);
+    b.textContent = !st.linkWanted ? 'Link' : active() ? 'Link · ' + st.peers + (playing ? ' ▶' : ' ■') : 'Link …';
     b.title = !st.linkWanted ? 'Tempo und Beat von Ableton Link (über das Carabiner-Fenster)'
       : active() ? 'Ableton Link: ' + st.bpm.toFixed(2) + ' BPM, ' + st.peers + ' Teilnehmer – klicken zum Ausschalten'
         : (st.error || 'Verbinde mit Carabiner …');
@@ -47,11 +51,11 @@
   function push() {
     if (!active() || !window.LEDDevices) return;
     for (const d of window.LEDDevices.senders()) {
-      window.LEDDevices.sendQuiet(d.port, (lat) => 'LINK ' + st.bpm.toFixed(3) + ' ' + beatNow(lat).toFixed(4));
+      window.LEDDevices.sendQuiet(d.port, (lat) => 'LINK ' + st.bpm.toFixed(3) + ' ' + (beatNow(lat) + offset()).toFixed(4));
     }
   }
 
-  A.setExternalClock(() => (active() ? { bpm: st.bpm, beat: beatNow() } : null));
+  A.setExternalClock(() => (active() ? { bpm: st.bpm, beat: beatNow() + offset() } : null));
   setInterval(push, 500);
 
   if (A.NATIVE) {

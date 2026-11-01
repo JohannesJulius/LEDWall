@@ -14,6 +14,22 @@ import Network
  * den HTTP-Weg der 64×48-Wand (link.js/devices.js) oder auf den Carabiner-Start.
  */
 
+/// Uhr von Ableton Link auf macOS (mach_absolute_time in Mikrosekunden). Carabiners :start ist in
+/// dieser Zeitbasis, damit lässt sich die Beat-Position ohne Übertragungsverzögerung berechnen.
+enum LinkClock {
+    private static let factor: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom) / 1000.0
+    }()
+    static func micros() -> Double { Double(mach_absolute_time()) * factor }
+
+    static func beat(start: Double, bpm: Double, at micros: Double = LinkClock.micros()) -> Double? {
+        guard start != 0, bpm > 0 else { return nil }
+        return (micros - start) * bpm / 60_000_000.0
+    }
+}
+
 /// Glättet das Zittern der hochgerechneten Beat-Position (exakte Portierung aus der Python-App).
 struct BeatSmoother {
     static let jitterThresholdBeats = 0.05
@@ -68,6 +84,22 @@ final class LightBridge {
         var wallActive = 1
         var wallIdle = 5
         var destinations: [Destination] = []
+        var playMode = "link"   // "link": Start/Stop von Link, "always": Track gilt immer als laufend
+        var beatOffset = 0      // 0–3 Beats: verschiebt die „1“ des Takts
+
+        init() {}
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+            multiplier = try c.decodeIfPresent(Int.self, forKey: .multiplier) ?? 1
+            relayActive = try c.decodeIfPresent(Int.self, forKey: .relayActive) ?? 1
+            relayIdle = try c.decodeIfPresent(Int.self, forKey: .relayIdle) ?? 5
+            wallActive = try c.decodeIfPresent(Int.self, forKey: .wallActive) ?? 1
+            wallIdle = try c.decodeIfPresent(Int.self, forKey: .wallIdle) ?? 5
+            destinations = try c.decodeIfPresent([Destination].self, forKey: .destinations) ?? []
+            playMode = try c.decodeIfPresent(String.self, forKey: .playMode) ?? "link"
+            beatOffset = try c.decodeIfPresent(Int.self, forKey: .beatOffset) ?? 0
+        }
     }
 
     struct DestState: Codable {
@@ -92,7 +124,8 @@ final class LightBridge {
         var bpm = 0.0
         var beat = 0.0
         var playing = false
-        var time = 0.0      // Monotone Zeit der letzten Carabiner-Meldung (s)
+        var time = 0.0      // Link-Uhr der letzten Carabiner-Meldung (s)
+        var start: Double?  // Link-Zeit (µs) von Beat 0, wenn verlässlich
     }
     private let clockLock = NSLock()
     private var clock = Clock()
@@ -120,13 +153,13 @@ final class LightBridge {
         return settings.enabled
     }
 
-    static func now() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
+    static func now() -> Double { LinkClock.micros() / 1e6 }
 
     // MARK: - Takt
 
-    func updateClock(connected: Bool, bpm: Double, beat: Double, playing: Bool) {
+    func updateClock(connected: Bool, bpm: Double, beat: Double, playing: Bool, start: Double?) {
         clockLock.lock()
-        clock = Clock(connected: connected, bpm: bpm, beat: beat, playing: playing, time: Self.now())
+        clock = Clock(connected: connected, bpm: bpm, beat: beat, playing: playing, time: Self.now(), start: start)
         clockLock.unlock()
     }
 
@@ -168,6 +201,8 @@ final class LightBridge {
             if let v = int("relayIdle"), (1...16).contains(v) { settings.relayIdle = v }
             if let v = int("wallActive"), (1...16).contains(v) { settings.wallActive = v }
             if let v = int("wallIdle"), (1...16).contains(v) { settings.wallIdle = v }
+            if let v = body["playMode"] as? String, v == "link" || v == "always" { settings.playMode = v }
+            if let v = int("beatOffset") { settings.beatOffset = ((v % 4) + 4) % 4 }
         case "addDest":
             let host = (body["host"] as? String ?? "").trimmingCharacters(in: .whitespaces)
             let kind = body["kind"] as? String == "wall" ? "wall" : "relay"
@@ -206,10 +241,13 @@ final class LightBridge {
         clockLock.unlock()
 
         let now = Self.now()
-        let playing = c.playing
+        let playing = s.playMode == "always" ? true : c.playing
         let rawBpm = c.bpm
-        let rawBeat = c.beat + (now - c.time) * c.bpm / 60.0
-        let beat = smoother.smoothedBeat(rawBpm: rawBpm, rawBeat: rawBeat, playing: playing, now: now)
+        // Mit :start direkt aus der Link-Uhr, sonst ab der letzten Meldung hochgerechnet
+        let rawBeat = c.start.flatMap { LinkClock.beat(start: $0, bpm: c.bpm, at: now * 1e6) }
+            ?? c.beat + (now - c.time) * c.bpm / 60.0
+        let smoothed = smoother.smoothedBeat(rawBpm: rawBpm, rawBeat: rawBeat, playing: playing, now: now)
+        let beat = smoothed + Double(s.beatOffset)
         let msg = LightMessage.format(bpm: rawBpm, beat: beat, playing: playing, multiplier: s.multiplier,
                                       apat: s.relayActive, ipat: s.relayIdle, wapat: s.wallActive, wipat: s.wallIdle)
         lastMessage = msg
