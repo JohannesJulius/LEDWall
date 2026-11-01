@@ -103,13 +103,14 @@
     xhr.send(data);
   }
 
-  function addNetHost() {
-    const h = (prompt('Adresse des Pico 2W im WLAN (z. B. ledwall.local oder 192.168.1.50):', 'ledwall.local') || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  function addNetHost(given, keepSelection) {
+    const raw = typeof given === 'string' ? given : prompt('Adresse des Pico 2W im WLAN (z. B. ledwall.local oder 192.168.1.50):', 'ledwall.local');
+    const h = (raw || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
     if (!h) return;
     if (!st.netHosts.includes(h)) st.netHosts.push(h);
     saveHosts();
     st.devices = st.devices.filter((d) => !d.net).concat(netDevices());
-    st.sel = 'net:' + h;
+    if (!keepSelection) st.sel = 'net:' + h;
     netSend('net:' + h, 'PATTERNS');
     renderList();
     renderDetail();
@@ -121,7 +122,7 @@
     delete st.info['net:' + host];
     st.preview.delete('net:' + host);
     st.devices = st.devices.filter((d) => d.port !== 'net:' + host);
-    st.sel = null;
+    if (st.sel === 'net:' + host) st.sel = null;
     renderList();
     renderDetail();
   }
@@ -851,7 +852,7 @@
   }, 1000);
   // WLAN-Geräte in der Liste aktuell halten
   setInterval(() => {
-    if (A.view() !== 'devices') return;
+    if (A.view() !== 'devices' && A.view() !== 'lights') return;
     for (const h of st.netHosts) {
       const port = 'net:' + h, d = selected();
       if (d && d.port === port) continue;
@@ -876,7 +877,16 @@
       .catch(() => {});
   }
 
-  window.LEDDevices = { onDevices, onLine, onFlash, onUpload, senders, sendQuiet, state: st };
+  // Für lights.js: alle Pico 2W (auch gerade nicht erreichbare WLAN-Sender)
+  function allSenders() { return st.devices.filter((d) => d.kind === 'sender'); }
+
+  window.LEDDevices = {
+    onDevices, onLine, onFlash, onUpload, senders, sendQuiet, state: st,
+    allSenders, send, addNetHost, removeNetHost, isOffline: (d) => !!(d.net && st.netOffline[d.host]),
+    info: (port) => st.info[port],
+    patterns: (port) => st.patterns[port] || [],
+    select: (id) => { st.sel = id; renderList(); renderDetail(); },
+  };
 
   document.getElementById('btnDevRescan').onclick = () => A.nativePost && A.NATIVE && A.nativePost('device', { action: 'state' });
   st.devices = netDevices();

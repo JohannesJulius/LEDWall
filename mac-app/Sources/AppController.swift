@@ -18,6 +18,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private let devices = DeviceManager()
     private let udp = UDPSender()
     private let carabiner = CarabinerClient()
+    private let lights = LightBridge()
     private var currentFile: URL?
     private var pageReady = false
 
@@ -48,14 +49,29 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
         devices.start()
         carabiner.onStatus = { [weak self] st in
-            guard let self, let d = try? JSONEncoder().encode(st),
+            guard let self else { return }
+            // Ohne Start/Stop-Sync (ältere Carabiner-Version) gilt Link als „läuft“
+            self.lights.updateClock(connected: st.connected, bpm: st.bpm, beat: st.beat,
+                                    playing: st.hasPlaying ? st.playing : true)
+            guard let d = try? JSONEncoder().encode(st),
                   let obj = try? JSONSerialization.jsonObject(with: d) else { return }
             self.callJS("link", [obj])
+        }
+        lights.onState = { [weak self] st in self?.callJS("lights", [st]) }
+        if lights.isEnabled {
+            lights.startLoop()
+            carabiner.setWanted(.lights, true)
         }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // Nur ein von der App selbst gestartetes Carabiner wieder beenden
+    func applicationWillTerminate(_ notification: Notification) {
+        lights.stopLoop()
+        carabiner.shutdown()
+    }
 
     // Vor dem Beenden den aktuellen Stand aus der Web-Oberfläche sichern
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -241,7 +257,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
         case "link":
             // Ableton Link über Carabiner: start / stop
-            if (body["action"] as? String) == "start" { carabiner.start() } else { carabiner.stop() }
+            switch body["action"] as? String ?? "" {
+            case "start": carabiner.setWanted(.link, true)
+            case "stop": carabiner.setWanted(.link, false)
+            default: carabiner.setWanted(.link, carabiner.status.linkWanted) // nur Zustand melden
+            }
+        case "lights":
+            // Licht-Brücke: Relais-Rig + HUB75-Wand per UDP
+            lights.handle(body)
+            carabiner.setWanted(.lights, lights.isEnabled)
         case "udp":
             // Live-Vorschau per WLAN an den Pico 2W (Direktbetrieb)
             if let host = body["host"] as? String, let b64 = body["base64"] as? String, let d = Data(base64Encoded: b64) {

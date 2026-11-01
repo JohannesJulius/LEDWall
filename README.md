@@ -17,9 +17,10 @@ Modulare LED-Wand aus kleinen 64 × 48-Pixel-Wänden.
   versteht die Pakete vom Sender. Eingerichtet wird er in der App (Tab **Geräte**), siehe
   [docs/receiver.md](docs/receiver.md).
 
-Die App hat drei Bereiche: **Patterns** (erstellen mit BPM-Vorschau), **Geräte** (Empfänger
-erkennen, Firmware aufspielen, Adresse und Panels einstellen, Live-Vorschau über USB) und
-**Raum** (das Setup in 3D nachbauen und im Projekt speichern).
+Die App hat vier Bereiche: **Patterns** (erstellen mit BPM-Vorschau), **Geräte** (Empfänger
+erkennen, Firmware aufspielen, Adresse und Panels einstellen, Live-Vorschau über USB),
+**Raum** (das Setup in 3D nachbauen und im Projekt speichern) und **Licht** (64×48-Wand,
+Relais-Rig und HUB75-Wand per WLAN im Ableton-Link-Takt steuern, siehe [docs/lights.md](docs/lights.md)).
 
 ## LED Pattern Studio installieren (Mac)
 
@@ -67,6 +68,7 @@ dann unter **Actions → Lauf → Artifacts**. Lokal auf dem Mac geht es mit
 | [`firmware/sender/`](firmware/sender/) | Sender-Firmware für den Pico 2W (C, Pico SDK, WLAN + Weboberfläche) |
 | [`firmware/common/`](firmware/common/) | Gemeinsamer Protokoll-Code |
 | [`docs/sender.md`](docs/sender.md) | Anschlüsse, Bedienung und Ablauf des Senders |
+| [`docs/lights.md`](docs/lights.md) | Tab „Licht“: 64×48-Wand, Relais-Rig und HUB75-Wand per WLAN, UDP-Format |
 | [`docs/ableton-link.md`](docs/ableton-link.md) | Tempo und Beat von Ableton Link über Carabiner |
 | [`docs/direct-mode.md`](docs/direct-mode.md) | Testmodus: Panels direkt am Pico 2W (Seengreat-Adapter), alles über WLAN |
 | [`docs/receiver.md`](docs/receiver.md) | Verkabelung und Einrichtung des Empfängers |

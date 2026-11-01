@@ -208,3 +208,23 @@ body.native .native-only { display: block; }
 #roomCanvas { width: 100%; height: 100%; display: block; }
 .xyz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .xyz input { width: 100%; }
+
+/* ---------- licht */
+.lights-view { flex: 1; display: flex; min-height: 0; }
+.lights-detail { flex: 1; }
+.lights-detail .card { max-width: 980px; }
+.lights-detail .row { grid-template-columns: 170px minmax(0, 1fr) auto; }
+.light-msg { font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-all; user-select: text; -webkit-user-select: text; }
+.light-dev { border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 10px 12px; margin: 10px 0; }
+.light-dev-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.light-dev-head .spacer { flex: 1; }
+.grid-lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin: 12px 0 5px; }
+.pat-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.pat-grid button { overflow: hidden; text-overflow: ellipsis; text-align: left; padding: 6px 8px; font-size: 12px; }
+.pat-grid button b { color: var(--muted); font-weight: 600; margin-right: 2px; }
+.pat-grid button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pat-grid button.on b { color: #fff; }
+.pat-grid button.next { border-color: var(--accent); }
+.pat-grid.small button { padding: 3px 6px; font-size: 11px; }
+.dest-table input[type=text] { font-size: 12px; }
+@media (max-width: 900px) { .pat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

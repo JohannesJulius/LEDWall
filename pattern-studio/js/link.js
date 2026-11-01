@@ -10,12 +10,13 @@
 
   const A = window.LEDApp;
   const $ = (id) => document.getElementById(id);
-  const st = { enabled: false, connected: false, peers: 0, bpm: 0, beat: 0, error: '', t: 0 };
+  const st = { enabled: false, linkWanted: false, connected: false, peers: 0, bpm: 0, beat: 0, playing: false, hasPlaying: false, error: '', t: 0 };
 
   function beatNow(extraSeconds) {
     return st.beat + ((performance.now() - st.t) / 60000 + (extraSeconds || 0) / 60) * st.bpm;
   }
-  const active = () => st.enabled && st.connected && st.bpm > 0;
+  // Carabiner wird auch von der Licht-Brücke genutzt – für die Wand zählt nur, ob Link gewünscht ist
+  const active = () => st.linkWanted && st.connected && st.bpm > 0;
 
   function onStatus(s) {
     const wasActive = active();
@@ -23,7 +24,7 @@
     st.t = performance.now();
     render();
     if (active() !== wasActive) {
-      A.toast(active() ? 'Ableton Link verbunden – Tempo kommt von Carabiner' : (st.enabled ? (st.error || 'Ableton Link getrennt') : 'Ableton Link aus'), 3500);
+      A.toast(active() ? 'Ableton Link verbunden – Tempo kommt von Carabiner' : (st.linkWanted ? (st.error || 'Ableton Link getrennt') : 'Ableton Link aus'), 3500);
       push(); // Picos sofort einrasten lassen
     }
   }
@@ -31,8 +32,8 @@
   function render() {
     const b = $('btnLink');
     b.classList.toggle('active', active());
-    b.textContent = !st.enabled ? 'Link' : active() ? 'Link · ' + st.peers : 'Link …';
-    b.title = !st.enabled ? 'Tempo und Beat von Ableton Link (über das Carabiner-Fenster)'
+    b.textContent = !st.linkWanted ? 'Link' : active() ? 'Link · ' + st.peers : 'Link …';
+    b.title = !st.linkWanted ? 'Tempo und Beat von Ableton Link (über das Carabiner-Fenster)'
       : active() ? 'Ableton Link: ' + st.bpm.toFixed(2) + ' BPM, ' + st.peers + ' Teilnehmer – klicken zum Ausschalten'
         : (st.error || 'Verbinde mit Carabiner …');
   }
@@ -55,12 +56,12 @@
 
   if (A.NATIVE) {
     $('btnLink').hidden = false;
-    $('btnLink').onclick = () => setEnabled(!st.enabled);
+    $('btnLink').onclick = () => setEnabled(!st.linkWanted);
     let saved = '0';
     try { saved = localStorage.getItem('ledwall-link') || '0'; } catch (e) { /* egal */ }
     if (saved === '1') setEnabled(true);
   }
   render();
 
-  window.LEDLink = { onStatus, state: st, beatNow };
+  window.LEDLink = { onStatus, state: st, beatNow, setEnabled, active };
 })();

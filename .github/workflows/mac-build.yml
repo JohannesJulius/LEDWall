@@ -26,6 +26,10 @@ jobs:
       - name: Tests (Renderer)
         run: node --test pattern-studio/tests/*.test.js
 
+      - name: Tests (Licht-Brücke, Swift)
+        working-directory: mac-app
+        run: xcrun swiftc -swift-version 5 Sources/LightBridge.swift Tests/main.swift -o "$RUNNER_TEMP/lbtest" && "$RUNNER_TEMP/lbtest"
+
       - name: App bauen
         env:
           FIRMWARE_UF2: ${{ github.workspace }}/fw/receiver/build/ledwall-receiver.uf2
