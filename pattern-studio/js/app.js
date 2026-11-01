@@ -105,7 +105,8 @@
     devices(list, fw) { if (window.LEDDevices) window.LEDDevices.onDevices(list, fw); },
     deviceLine(port, line) { if (window.LEDDevices) window.LEDDevices.onLine(port, line); },
     flashResult(r) { if (window.LEDDevices) window.LEDDevices.onFlash(r); },
-    link(s) { if (window.LEDLink) window.LEDLink.onStatus(s); },
+    link(s) { if (window.LEDLink) window.LEDLink.onStatus(s); if (window.LEDLights) window.LEDLights.onLink(s); },
+    lights(s) { if (window.LEDLights) window.LEDLights.onState(s); },
     uploadProgress(port, sent, total, st2, err) { if (window.LEDDevices) window.LEDDevices.onUpload(port, sent, total, st2, err); },
   };
 
@@ -1194,6 +1195,7 @@
     $('patternsView').hidden = v !== 'patterns';
     $('devicesView').hidden = v !== 'devices';
     $('roomView').hidden = v !== 'room';
+    $('lightsView').hidden = v !== 'lights';
     for (const h of viewHooks) h(v);
     if (v === 'patterns') resizePreview();
   }
@@ -1212,6 +1214,7 @@
     setExternalClock: (fn) => { externalClock = fn; },
     onView: (fn) => viewHooks.push(fn),
     selectPattern: (i) => selectPattern(i),
+    setView: (v) => setView(v),
   };
 
   // ------------------------------------------------------------------ render all

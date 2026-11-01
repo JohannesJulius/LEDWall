@@ -13,6 +13,7 @@
       <button data-view="patterns" class="on">Patterns</button>
       <button data-view="devices">Geräte <span id="deviceBadge" class="badge" hidden></span></button>
       <button data-view="room">Raum</button>
+      <button data-view="lights">Licht <span id="lightsBadge" class="badge" hidden></span></button>
     </nav>
     <div class="file-actions">
       <button id="btnNew" title="Neues Projekt">Neu</button>
@@ -162,6 +163,10 @@
     </aside>
   </main>
 
+  <main class="view lights-view" id="lightsView" hidden>
+    <section class="device-detail lights-detail" id="lightsDetail"></section>
+  </main>
+
   <dialog id="exportDialog">
     <form method="dialog">
       <h2>Export für die Wand</h2>
@@ -233,5 +238,6 @@
   <script src="js/devices.js"></script>
   <script src="js/room.js"></script>
   <script src="js/link.js"></script>
+  <script src="js/lights.js"></script>
 </body>
 </html>

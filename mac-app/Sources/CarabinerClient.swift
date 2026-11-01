@@ -4,43 +4,88 @@ import Network
 /*
  * Verbindung zu Carabiner (Brücke zu Ableton Link, github.com/Deep-Symmetry/carabiner).
  * Carabiner nimmt nur lokale Verbindungen an (127.0.0.1, Port 17000). Antworten sind Textzeilen wie
- *   status { :peers 1 :bpm 128.000000 :start 73743731220 :beat 597.737570 }
- * :beat ist die Beat-Position mit Quantum 4, also passend zu Abletons Takten.
+ *   status { :peers 1 :bpm 128.000000 :start 73743731220 :beat 597.737570 :playing true }
+ * :beat ist die Beat-Position mit Quantum 4, also passend zu Abletons Takten. :playing kommt nur,
+ * nachdem `enable-start-stop-sync` geschickt wurde – das passiert direkt nach dem Verbinden.
+ *
+ * Zwei Nutzer teilen sich die Verbindung: „link“ (Takt für die 64×48-Wand / Vorschau) und
+ * „lights“ (Licht-Brücke: Relais + HUB75-Wand). Verbunden ist, solange einer davon sie braucht.
+ * Antwortet nichts auf dem Port, startet CarabinerLauncher ein neben der App liegendes Carabiner.
  */
 final class CarabinerClient {
+    enum Consumer { case link, lights }
+
     struct Status: Codable {
         var enabled = false
+        var linkWanted = false
+        var lightsWanted = false
         var connected = false
         var peers = 0
         var bpm = 0.0
         var beat = 0.0
+        var playing = false
+        var hasPlaying = false
+        var startedByApp = false
         var error = ""
     }
 
     var onStatus: ((Status) -> Void)?
     private(set) var status = Status()
-    var port: UInt16 = 17000
+    let port: UInt16 = 17000
+    let launcher = CarabinerLauncher()
 
     private var conn: NWConnection?
     private var timer: Timer?
     private var buffer = Data()
     private var reconnectAt = Date.distantPast
 
-    func start() {
-        guard !status.enabled else { onStatus?(status); return }
-        status = Status()
-        status.enabled = true
-        connect()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
-        onStatus?(status)
+    func setWanted(_ consumer: Consumer, _ on: Bool) {
+        switch consumer {
+        case .link: status.linkWanted = on
+        case .lights: status.lightsWanted = on
+        }
+        let want = status.linkWanted || status.lightsWanted
+        if want && !status.enabled { start() }
+        else if !want && status.enabled { stop() }
+        else { publish() }
     }
 
-    func stop() {
+    // Alte Schnittstelle (nur Link)
+    func start(_ consumer: Consumer) { setWanted(consumer, true) }
+    func stop(_ consumer: Consumer) { setWanted(consumer, false) }
+
+    private func start() {
+        status.enabled = true
+        status.connected = false
+        status.error = ""
+        connect()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
+        publish()
+    }
+
+    private func stop() {
         timer?.invalidate()
         timer = nil
         conn?.cancel()
         conn = nil
+        let link = status.linkWanted, lights = status.lightsWanted
         status = Status()
+        status.linkWanted = link
+        status.lightsWanted = lights
+        publish()
+    }
+
+    /// Beim Beenden der App: Verbindung trennen und nur ein selbst gestartetes Carabiner beenden
+    func shutdown() {
+        timer?.invalidate()
+        timer = nil
+        conn?.cancel()
+        conn = nil
+        launcher.stop()
+    }
+
+    private func publish() {
+        status.startedByApp = launcher.startedByUs
         onStatus?(status)
     }
 
@@ -56,10 +101,17 @@ final class CarabinerClient {
                 self.status.connected = true
                 self.status.error = ""
                 self.receive(c)
-                self.send("status")
-                self.onStatus?(self.status)
+                // nur ein Befehl pro Paket; "status" folgt mit dem nächsten Tick (250 ms)
+                self.send("enable-start-stop-sync\n")
+                self.publish()
             case .waiting, .failed:
-                self.fail("Carabiner nicht erreichbar – läuft das Carabiner-Fenster (Port \(self.port))?")
+                self.fail("Carabiner nicht erreichbar (Port \(self.port)) – starte …")
+                // Nichts antwortet: Carabiner neben der App suchen und starten (eigener Lock/Queue)
+                self.launcher.ensureRunning { [weak self] msg in
+                    guard let self, self.status.enabled, !self.status.connected, !msg.isEmpty else { return }
+                    self.status.error = msg
+                    self.publish()
+                }
             default:
                 break
             }
@@ -74,7 +126,7 @@ final class CarabinerClient {
         status.peers = 0
         status.error = msg
         reconnectAt = Date().addingTimeInterval(2)
-        onStatus?(status)
+        publish()
     }
 
     private func tick() {
@@ -83,7 +135,7 @@ final class CarabinerClient {
             if Date() >= reconnectAt { connect() }
             return
         }
-        if status.connected { send("status") }
+        if status.connected { send("status\n") }
     }
 
     private func send(_ text: String) {
@@ -113,15 +165,18 @@ final class CarabinerClient {
 
     private func handle(_ line: String) {
         guard line.hasPrefix("status") else { return }
-        func value(_ key: String) -> Double? {
+        func token(_ key: String) -> Substring? {
             guard let r = line.range(of: ":" + key + " ") else { return nil }
-            let token = line[r.upperBound...].prefix { !$0.isWhitespace && $0 != "}" }
-            return Double(token)
+            return line[r.upperBound...].prefix { !$0.isWhitespace && $0 != "}" }
         }
-        if let v = value("bpm") { status.bpm = v }
-        if let v = value("beat") { status.beat = v }
-        if let v = value("peers") { status.peers = Int(v) }
+        if let t = token("bpm"), let v = Double(t) { status.bpm = v }
+        if let t = token("beat"), let v = Double(t) { status.beat = v }
+        if let t = token("peers"), let v = Double(t) { status.peers = Int(v) }
+        if let t = token("playing") {
+            status.playing = t == "true"
+            status.hasPlaying = true
+        }
         status.connected = true
-        onStatus?(status)
+        publish()
     }
 }
