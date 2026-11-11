@@ -90,6 +90,10 @@ final class DeviceManager {
             connections[port] = nil
             if uploads.removeValue(forKey: port) != nil { onUpload?(port, 0, 0, "error", "Gerät getrennt") }
         }
+        // Noch keine Antwort (z. B. INFO zu früh nach dem Einstecken verschickt): erneut fragen
+        for (_, conn) in connections where !conn.gotData && Date().timeIntervalSince(conn.openedAt) > 1 {
+            conn.send("INFO\n")
+        }
         for port in receiverPorts where connections[port] == nil {
             let conn = SerialConnection(path: port)
             conn.onLine = { [weak self] line in self?.handleLine(port, line) }
@@ -247,6 +251,8 @@ final class SerialConnection {
     private let writeQueue = DispatchQueue(label: "ledwall.serial.write")
     private var framePending = false
     private let lock = NSLock()
+    private(set) var openedAt = Date()
+    private(set) var gotData = false
 
     init(path: String) { self.path = path }
 
@@ -260,6 +266,10 @@ final class SerialConnection {
         cfsetspeed(&t, speed_t(115200)) // niemals 1200: das würde den BOOTSEL-Modus auslösen
         tcsetattr(fd, TCSANOW, &t)
         _ = fcntl(fd, F_SETFL, 0) // Schreiben blockierend (auf der writeQueue)
+        // DTR setzen: Die Pico-Firmware (stdio_usb) liest und antwortet nur, wenn DTR aktiv ist.
+        // TIOCSDTR = _IO('t', 121); das Makro selbst ist in Swift nicht verfügbar.
+        _ = ioctl(fd, UInt(0x2000_7479))
+        openedAt = Date()
 
         let src = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
         src.setEventHandler { [weak self] in self?.readAvailable() }
@@ -277,6 +287,7 @@ final class SerialConnection {
             if n == 0 || (errno != EAGAIN && errno != EINTR) { close() }
             return
         }
+        gotData = true
         buffer.append(contentsOf: tmp[0..<n])
         while let nl = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<nl]

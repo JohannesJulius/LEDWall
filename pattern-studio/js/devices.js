@@ -152,6 +152,14 @@
     });
   }
 
+  // Befehl senden und melden, wenn das Gerät nicht antwortet
+  function checked(port, text) {
+    return command(port, text).then((r) => {
+      if (!r.ok) A.toast('Keine Antwort vom Gerät auf „' + text + '“' + (r.error ? ' (' + r.error + ')' : '') + ' – USB-Kabel prüfen oder Gerät neu einstecken', 5000);
+      return r;
+    });
+  }
+
   const receivers = () => st.devices.filter((d) => d.kind === 'receiver');
   const fwR = () => st.firmware.receiver || {};
   const fwS = () => st.firmware.sender || {};
@@ -454,7 +462,7 @@
       el('h1', null, info.name, el('span', { class: 'pill info' }, 'Adresse ' + info.addr)),
       el('div', { class: 'muted' }, 'RP2040 Zero · Seriennummer ' + info.uid + ' · Firmware ' + info.ver),
       el('div', { class: 'actions' },
-        el('button', { onclick: () => command(port, 'IDENT 5') }, 'Identifizieren'),
+        el('button', { onclick: () => checked(port, 'IDENT 5') }, 'Identifizieren'),
         el('button', { onclick: () => { send(port, 'REBOOT'); } }, 'Neu starten'),
         outdated ? el('button', { class: 'accent', onclick: () => {
           st.pendingFlash = Date.now() + 20000;
@@ -573,7 +581,7 @@
       renderList();
     });
     const cardTest = el('div', { class: 'card' }, el('h3', null, 'Testen'),
-      el('div', { class: 'actions', style: 'margin-top:0' }, TESTS.map(([m, label]) => el('button', { onclick: () => command(port, 'TEST ' + m) }, label))),
+      el('div', { class: 'actions', style: 'margin-top:0' }, TESTS.map(([m, label]) => el('button', { onclick: () => checked(port, 'TEST ' + m) }, label))),
       opts.noPreview
         ? el('div', { class: 'muted', style: 'margin-top:12px;font-size:12px' }, opts.noPreview)
         : el('label', { class: 'inline', style: 'margin-top:12px;display:flex' }, live,
