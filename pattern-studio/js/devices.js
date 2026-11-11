@@ -177,7 +177,7 @@
     return {
       addr: info.addr, name: info.name, w: info.w, h: info.h, pw: info.pw, ph: info.ph,
       panels: info.panels.map((p) => p.slice()), order: info.order, bright: info.bright,
-      gamma: info.gamma, div: info.div, baud: info.baud,
+      gamma: info.gamma, div: info.div, baud: info.baud, out: info.out,
     };
   }
 
@@ -185,7 +185,7 @@
     return 'SET addr=' + e.addr + ' name=' + encodeURIComponent(e.name || 'Wand') +
       ' w=' + e.w + ' h=' + e.h + ' pw=' + e.pw + ' ph=' + e.ph +
       ' panels=' + e.panels.map((p) => p.join(',')).join(';') +
-      ' order=' + e.order + ' bright=' + e.bright + ' gamma=' + e.gamma + ' div=' + e.div + ' baud=' + e.baud;
+      ' order=' + e.order + ' bright=' + e.bright + ' gamma=' + e.gamma + ' div=' + e.div + ' baud=' + e.baud + (e.out === undefined ? '' : ' out=' + e.out);
   }
 
   // ---------------------------------------------------------------- Ereignisse von der App
@@ -249,6 +249,11 @@
         if (selected() && selected().port === port && (first || !st.dirty[port])) renderDetail();
         else updateStatusLine();
       } catch (e) { /* unvollständige Zeile */ }
+      return;
+    }
+    if (line.startsWith('DUMP ')) {
+      st.signals[port] = 'Bildspeicher (Testbild Weiß):\n' + line.slice(5);
+      if (st.sigEl[port]) st.sigEl[port].textContent = st.signals[port];
       return;
     }
     if (line.startsWith('SIGNALS ')) {
@@ -576,6 +581,7 @@
       row('Gamma', selectInput(e, 'gamma', [[18, '1,8'], [20, '2,0'], [22, '2,2 (Standard)'], [25, '2,5'], [28, '2,8']], markDirty)),
       row('Farbreihenfolge', selectInput(e, 'order', ORDERS.map((o, i) => [i, o]), markDirty), el('span', { class: 'muted' }, 'falls Rot und Blau vertauscht sind')),
       row('Panel-Takt', selectInput(e, 'div', CLOCKS, markDirty), el('span', { class: 'muted' }, 'langsamer bei Flackern / langen Kabeln')),
+      e.out === undefined ? null : row('Ausgabe', selectInput(e, 'out', [[0, 'Software (sicher)'], [1, 'PIO (schnell)']], markDirty), el('span', { class: 'muted' }, 'Software arbeitet wie der Handtest')),
       direct ? null : row('UART-Baudrate', selectInput(e, 'baud', BAUDS.map((b) => [b, (b / 1e6) + ' MBaud']), markDirty), el('span', { class: 'muted' }, 'muss zum Sender passen')));
 
     const cardSave = el('div', { class: 'card' },
@@ -627,7 +633,8 @@
           el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Beenden')),
         el('p', { class: 'muted', style: 'font-size:12px' }, 'Signale prüfen: Der Empfänger zählt 50 ms lang, wie oft jede Leitung im normalen Betrieb wechselt (vorher „Beenden“, damit die Bildausgabe läuft). 0 = Leitung steht still.'),
         el('div', { class: 'actions', style: 'margin-top:0' },
-          el('button', { onclick: () => { send(port, 'PIN OFF'); send(port, 'TEST 5'); setTimeout(() => send(port, 'SIGNALS'), 300); } }, 'Signale prüfen')),
+          el('button', { onclick: () => { send(port, 'PIN OFF'); send(port, 'TEST 5'); setTimeout(() => send(port, 'SIGNALS'), 300); } }, 'Signale prüfen'),
+          el('button', { onclick: () => { send(port, 'PIN OFF'); send(port, 'TEST 5'); setTimeout(() => send(port, 'DUMP'), 300); } }, 'Bildspeicher prüfen')),
         sigOut);
     }
 

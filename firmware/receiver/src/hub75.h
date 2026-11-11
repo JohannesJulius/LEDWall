@@ -10,9 +10,12 @@
 #define PIN_LAT 14    // LAT = GP14, OE = GP15
 #define PIN_OE 15
 
-void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t *blank);
+// sw = true: Ausgabe per CPU (wie der Handtest), sonst per PIO
+void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, bool sw, const uint8_t *blank);
 // Geometrie ändern: hält Core 1 kurz an
-void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t *blank);
+void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, bool sw, const uint8_t *blank);
+// Diagnose: aktuell angezeigter Puffer
+const uint8_t *hub75_front(void);
 // Puffer zum nächsten Bildwechsel anzeigen
 void hub75_show(const uint8_t *buf);
 bool hub75_swap_pending(void);
