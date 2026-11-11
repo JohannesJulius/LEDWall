@@ -30,6 +30,12 @@ static inline void wait_tx_stall(uint sm) {
     while (!(pio->fdebug & mask)) tight_loop_contents();
 }
 
+// Zeilen-SM fertig: Wort abgeholt und OE-Puls vorbei (SM wartet wieder auf das nächste Wort)
+static inline void wait_row_idle(void) {
+    while (!pio_sm_is_tx_fifo_empty(pio, SM_ROW)) tight_loop_contents();
+    wait_tx_stall(SM_ROW);
+}
+
 static void __not_in_flash_func(core1_main)(void) {
     multicore_lockout_victim_init(); // erlaubt Flash-Schreiben von Core 0 aus
     for (;;) {
@@ -43,9 +49,11 @@ static void __not_in_flash_func(core1_main)(void) {
         for (uint r = 0; r < rows; r++) {
             for (uint b = 0; b < BP; b++) {
                 const uint32_t *src = (const uint32_t *)(buf + (r * BP + b) * stride);
+                // Erst schieben, wenn der vorige OE-Puls vorbei ist (LEDs aus). Während die Panels
+                // leuchten, verschiebt der LED-Strom die Masse gegenüber dem Zero und verfälscht CLK.
+                wait_row_idle();
                 for (uint i = 0; i < w4; i++) pio_sm_put_blocking(pio, SM_DATA, src[i]);
                 wait_tx_stall(SM_DATA);
-                wait_tx_stall(SM_ROW);
                 const uint32_t pulse = ((uint32_t)PULSE_BASE << b) / row_scale;
                 pio_sm_put_blocking(pio, SM_ROW, r | ((pulse ? pulse : 1) - 1) << 5);
             }
