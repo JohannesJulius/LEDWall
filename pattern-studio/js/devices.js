@@ -42,7 +42,7 @@
   const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];
   const TESTS = [[1, 'Farben'], [2, 'Verlauf'], [3, 'Panels'], [4, 'Raster'], [5, 'Weiß'], [0, 'Aus']];
   const BAUDS = [1000000, 2000000, 3000000, 4000000];
-  const CLOCKS = [[2, 'sehr schnell (31 MHz)'], [3, 'schnell (21 MHz)'], [5, 'normal (12,5 MHz)'], [8, 'langsam (7,8 MHz)'], [12, 'sehr langsam (5,2 MHz)']];
+  const CLOCKS = [[2, 'sehr schnell (31 MHz)'], [3, 'schnell (21 MHz)'], [5, 'normal (12,5 MHz)'], [8, 'langsam (7,8 MHz)'], [12, 'sehr langsam (5,2 MHz)'], [31, 'Diagnose (2 MHz)'], [62, 'Diagnose (1 MHz)']];
 
   // ---------------------------------------------------------------- Hilfen
 
@@ -650,7 +650,7 @@
       el('div', { class: 'wiring-grid', style: 'margin-top:10px' },
         el('div', null, el('div', { class: 'muted' }, 'HUB75-Eingang'), el('div', { class: 'wiring-grid', style: 'gap:24px' }, t1, t2)),
         el('div', null, el('div', { class: 'muted' }, 'Vom Sender'), t3)),
-      el('p', { class: 'muted', style: 'font-size:12px' }, 'Panels mit eigenem 5-V-Netzteil versorgen, GND von Netzteil, Zero und Sender verbinden. Panels mit nur A–D (1/8 Scan, 16 Pixel hoch) lassen E einfach frei.'));
+      el('p', { class: 'muted', style: 'font-size:12px' }, 'Panels mit eigenem 5-V-Netzteil versorgen, GND von Netzteil, Zero und Sender verbinden. Am Flachbandkabel möglichst alle GND-Adern (Pin 4, 16 und bei 16 Pixel hohen Panels auch 8) mit GND am Zero verbinden. Panels mit nur A–D (1/8 Scan, 16 Pixel hoch) lassen E einfach frei.'));
     if (open) det.open = true;
     return [det];
   }
