@@ -242,6 +242,21 @@ static void handle_line(char *line) {
         int s = atoi(arg);
         start_ident(s > 0 && s < 120 ? (uint32_t)s : 5);
         printf("OK\n");
+    } else if (!strcmp(line, "PIN")) {
+        // PIN <gpio> <0|1>: Pin-Test (Bildausgabe angehalten), PIN OFF: zurück zur Bildausgabe
+        if (!strcmp(arg, "OFF") || !strcmp(arg, "off")) {
+            hub75_manual(false);
+            printf("OK\n");
+        } else {
+            int p = -1, v = 0;
+            if (sscanf(arg, "%d %d", &p, &v) == 2 && p >= 2 && p <= 15) {
+                hub75_manual(true);
+                hub75_manual_set((unsigned)p, v != 0);
+                printf("OK\n");
+            } else {
+                printf("ERR PIN <2..15> <0|1> oder PIN OFF\n");
+            }
+        }
     } else if (!strcmp(line, "TEST")) {
         uint8_t m = (uint8_t)atoi(arg);
         on_packet((void *)1, 0, LW_TEST, &m, 1);

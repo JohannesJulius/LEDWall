@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "hardware/clocks.h"
+#include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "hub75.pio.h"
 #include "pico/multicore.h"
@@ -9,7 +10,8 @@
 #define BP DISPLAY_BITPLANES
 #define SM_DATA 0
 #define SM_ROW 1
-#define PULSE_BASE 12 // Takte für die niedrigste Bitebene
+#define ROW_CLKDIV 2
+#define PULSE_BASE 6  // Takte (bei ROW_CLKDIV) für die niedrigste Bitebene
 
 static PIO const pio = pio0;
 static uint data_offset, row_offset;
@@ -68,6 +70,7 @@ static void setup_sms(uint8_t clk_div) {
     sm_config_set_out_pins(&c, PIN_ADDR, 5);
     sm_config_set_sideset_pins(&c, PIN_LAT);
     sm_config_set_out_shift(&c, true, true, 32);
+    sm_config_set_clkdiv(&c, ROW_CLKDIV);
     pio_sm_init(pio, SM_ROW, row_offset, &c);
 
     pio_sm_set_enabled(pio, SM_DATA, true);
@@ -102,11 +105,38 @@ void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const 
     pause_req = false;
 }
 
+// Pin-Test: Bildausgabe anhalten und die HUB75-Pins von Hand setzen (zum Nachmessen)
+static bool manual;
+
+void hub75_manual(bool on) {
+    if (on == manual) return;
+    if (on) {
+        pause_req = true;
+        while (!paused) tight_loop_contents();
+        for (uint p = PIN_R0; p <= PIN_OE; p++) {
+            gpio_init(p);
+            gpio_set_dir(p, GPIO_OUT);
+            gpio_put(p, p == PIN_OE); // OE aus, alles andere low
+        }
+    } else {
+        for (uint p = PIN_R0; p <= PIN_OE; p++) pio_gpio_init(pio, p);
+        pause_req = false;
+    }
+    manual = on;
+}
+
+bool hub75_manual_set(unsigned pin, bool value) {
+    if (!manual || pin < PIN_R0 || pin > PIN_OE) return false;
+    gpio_put(pin, value);
+    return true;
+}
+
 void hub75_show(const uint8_t *buf) {
     pending = buf;
     swap_req = true;
 }
 
-bool hub75_swap_pending(void) { return swap_req; }
+// Während des Pin-Tests steht Core 1: nicht auf den Bildwechsel warten (sonst hinge Core 0)
+bool hub75_swap_pending(void) { return swap_req && !manual; }
 
 uint32_t hub75_refresh_count(void) { return refreshes; }
