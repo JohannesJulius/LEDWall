@@ -131,6 +131,29 @@ bool hub75_manual_set(unsigned pin, bool value) {
     return true;
 }
 
+// Handtest ohne PIO: eine Farbe langsam (µs-Takt) in die ganze Kette schieben, latchen und
+// Zeile 0 einschalten. Zeigt sich eine farbige Linie, sind CLK/LAT/Farbleitungen in Ordnung.
+void hub75_manual_shift(bool r, bool g, bool b, unsigned row) {
+    hub75_manual(true);
+    gpio_put(PIN_OE, 1);
+    const uint32_t c3 = (r ? 1u : 0u) | (g ? 2u : 0u) | (b ? 4u : 0u);
+    const uint32_t col = c3 | (c3 << 3); // obere und untere Hälfte
+    for (uint i = 0; i < 1024; i++) {     // mehr als jede Kette lang ist
+        for (uint k = 0; k < 6; k++) gpio_put(PIN_R0 + k, (col >> k) & 1u);
+        busy_wait_us(1);
+        gpio_put(PIN_CLK, 1);
+        busy_wait_us(1);
+        gpio_put(PIN_CLK, 0);
+    }
+    busy_wait_us(2);
+    gpio_put(PIN_LAT, 1);
+    busy_wait_us(5);
+    gpio_put(PIN_LAT, 0);
+    for (uint k = 0; k < 5; k++) gpio_put(PIN_ADDR + k, (row >> k) & 1u);
+    busy_wait_us(2);
+    gpio_put(PIN_OE, 0);
+}
+
 void hub75_show(const uint8_t *buf) {
     pending = buf;
     swap_req = true;
