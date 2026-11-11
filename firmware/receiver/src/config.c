@@ -23,7 +23,7 @@ void config_defaults(config_t *c) {
     c->color_order = 0;
     c->brightness = 255;
     c->gamma_x10 = 22;
-    c->clk_div = 5; // ≈ 12,5 MHz Pixeltakt, verträgt auch lange Kabel
+    c->clk_div = 2; // PIO-Teiler 2: ≈ 6,9 MHz Pixeltakt (wie hub75_dj_engine)
     c->baud = 2000000;
 }
 

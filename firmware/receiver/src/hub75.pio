@@ -1,25 +1,48 @@
-; HUB75-Ansteuerung (eigene Programme, angelehnt an pico-examples/pio/hub75)
+; HUB75-Ansteuerung, Ablauf nach dem bewährten hub75_dj_engine (abgeleitet aus
+; pico-examples/pio/hub75, BSD-3-Clause, Copyright (c) 2020 Raspberry Pi (Trading) Ltd.):
+; Daten- und Zeilen-SM sind über IRQ 0/1 gekoppelt.
+;   Zeilen-SM:  wartet bis eine Zeile geschoben ist (IRQ 0) -> Pause -> LAT -> Pause ->
+;               gibt das Schieben der nächsten Zeile frei (IRQ 1) -> Adresse -> Pause ->
+;               OE an (Leuchtdauer) -> OE aus (Dunkelzeit)
+;   Daten-SM:   wartet auf IRQ 1, schiebt Y+1 Pixel, meldet IRQ 0
 
-; Schiebt eine Zeile in die Panels: pro Spalte ein Byte mit R0 G0 B0 R1 G1 B1 (Bit 0..5).
-; OUT-Pins: 6 Farbpins, Side-Set: CLK. Autopull 32 Bit, rechts schieben.
+; Pro Spalte ein Byte mit R1 G1 B1 R2 G2 B2 (Bit 0..5). OUT-Pins: 6 Farbpins, Side-Set: CLK.
+; Autopull 32 Bit (4 Pixel je Wort). Y = Pixel pro Zeile - 1 (beim Start gesetzt).
 .program hub75_data
 .side_set 1
 .wrap_target
-    out pins, 6     side 0
-    out null, 2     side 1
+    mov x, y                side 0
+    wait 1 irq 1            side 0
+pixel:
+    out pins, 6     [3]     side 0      ; Daten anlegen, CLK low
+    out null, 2     [3]     side 1      ; CLK high: Panel übernimmt das Pixel
+    jmp x-- pixel           side 0
+    irq nowait 0            side 0      ; Zeile ist geschoben
 .wrap
 
-; Zeile auswählen, Latch-Puls, dann OE für die gewünschte Zeit einschalten.
-; OUT-Pins: Adresse A..E, Side-Set: LAT (Bit 0) und OE (Bit 1, aktiv low).
-; FIFO-Wort: Bit 0..4 Zeile, Bit 5..31 Leuchtdauer in Takten.
-; Großzügige Zeiten (bei clkdiv 2 je 8 Takte = 128 ns): Viele Panels übernehmen kürzere
-; Latch-Pulse über lange Flachbandkabel und 3,3-V-Pegel nicht.
+; Side-Set: LAT (Bit 0), OE (Bit 1, aktiv low). OUT-Pins: Adresse A..E.
+; Y = Latch-Pausen in Takten (beim Start gesetzt). Je Zeile/Bitebene drei FIFO-Wörter:
+;   1. Bit 0..4 Zeile, Bit 5..31 Adress-Pause   2. Leuchtdauer - 1   3. Dunkelzeit - 1
 .program hub75_row
 .side_set 2
+    irq nowait 1            side 0b10   ; erste Zeile schieben lassen
 .wrap_target
-    out pins, 5     [7] side 0b10   ; Adresse anlegen, OE aus
-    nop             [7] side 0b11   ; LAT high
-    out x, 27       [7] side 0b10   ; LAT low, Adresse steht
-pulse:
-    jmp x-- pulse       side 0b00   ; OE an
+    wait 1 irq 0            side 0b10   ; OE aus, warten bis die Zeile geschoben ist
+    mov x, y                side 0b10
+guard:
+    jmp x-- guard           side 0b10
+    mov x, y        [3]     side 0b11   ; LAT high
+settle:
+    jmp x-- settle          side 0b10   ; LAT low, Daten stehen im Ausgangsregister
+    irq nowait 1            side 0b10   ; nächste Zeile darf geschoben werden
+    out pins, 5             side 0b10   ; Adresse erst nach dem Latch
+    out x, 27               side 0b10
+addr:
+    jmp x-- addr            side 0b10
+    out x, 32               side 0b10
+lit:
+    jmp x-- lit             side 0b00   ; OE an
+    out x, 32               side 0b10
+dark:
+    jmp x-- dark            side 0b10   ; OE aus
 .wrap

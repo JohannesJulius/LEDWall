@@ -30,7 +30,7 @@ typedef struct {
     uint8_t color_order;   // 0 RGB, 1 RBG, 2 GRB, 3 GBR, 4 BRG, 5 BGR
     uint8_t brightness;    // 0..255
     uint8_t gamma_x10;     // 22 = Gamma 2,2
-    uint8_t clk_div;       // PIO-Taktteiler (Panel-Takt = sys / (2 * div))
+    uint8_t clk_div;       // PIO-Taktteiler (Panel-Takt = sys / (9 * div))
     uint32_t baud;         // UART vom Sender
     uint32_t crc;
 } config_t;

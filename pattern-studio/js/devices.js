@@ -42,7 +42,7 @@
   const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];
   const TESTS = [[1, 'Farben'], [2, 'Verlauf'], [3, 'Panels'], [4, 'Raster'], [5, 'Weiß'], [0, 'Aus']];
   const BAUDS = [1000000, 2000000, 3000000, 4000000];
-  const CLOCKS = [[2, 'sehr schnell (31 MHz)'], [3, 'schnell (21 MHz)'], [5, 'normal (12,5 MHz)'], [8, 'langsam (7,8 MHz)'], [12, 'sehr langsam (5,2 MHz)'], [31, 'Diagnose (2 MHz)'], [62, 'Diagnose (1 MHz)']];
+  const CLOCKS = [[1, 'sehr schnell (13,9 MHz)'], [2, 'normal (6,9 MHz)'], [3, 'langsamer (4,6 MHz)'], [5, 'langsam (2,8 MHz)'], [8, 'sehr langsam (1,7 MHz)'], [31, 'Diagnose (0,45 MHz)']];
 
   // ---------------------------------------------------------------- Hilfen
 
