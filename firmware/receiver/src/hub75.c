@@ -14,6 +14,7 @@
 #define SM_ROW 1
 #define ROW_CLKDIV 2
 #define PULSE_BASE 6  // Takte (bei ROW_CLKDIV) für die niedrigste Bitebene
+static volatile uint row_scale = 1;  // bei sehr langsamem Pixeltakt auch Latch/Adresse verlangsamen
 
 static PIO const pio = pio0;
 static uint data_offset, row_offset;
@@ -45,7 +46,8 @@ static void __not_in_flash_func(core1_main)(void) {
                 for (uint i = 0; i < w4; i++) pio_sm_put_blocking(pio, SM_DATA, src[i]);
                 wait_tx_stall(SM_DATA);
                 wait_tx_stall(SM_ROW);
-                pio_sm_put_blocking(pio, SM_ROW, r | ((PULSE_BASE << b) - 1) << 5);
+                const uint32_t pulse = ((uint32_t)PULSE_BASE << b) / row_scale;
+                pio_sm_put_blocking(pio, SM_ROW, r | ((pulse ? pulse : 1) - 1) << 5);
             }
         }
         refreshes++;
@@ -72,7 +74,9 @@ static void setup_sms(uint8_t clk_div) {
     sm_config_set_out_pins(&c, PIN_ADDR, 5);
     sm_config_set_sideset_pins(&c, PIN_LAT);
     sm_config_set_out_shift(&c, true, true, 32);
-    sm_config_set_clkdiv(&c, ROW_CLKDIV);
+    // Diagnose-Takte (Teiler ≥ 16): Latch und Adresse proportional länger, OE-Zeiten gleich
+    row_scale = clk_div >= 16 ? clk_div / 8u : 1u;
+    sm_config_set_clkdiv(&c, (float)(ROW_CLKDIV * row_scale));
     pio_sm_init(pio, SM_ROW, row_offset, &c);
 
     pio_sm_set_enabled(pio, SM_DATA, true);
@@ -80,7 +84,13 @@ static void setup_sms(uint8_t clk_div) {
 }
 
 void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t *blank) {
-    for (uint p = PIN_R0; p <= PIN_OE; p++) pio_gpio_init(pio, p);
+    for (uint p = PIN_R0; p <= PIN_OE; p++) {
+        pio_gpio_init(pio, p);
+        // Weiche Flanken mit kräftigem Treiber: weniger Überschwingen und Übersprechen auf dem
+        // Flachbandkabel (sonst zählen die Panels Störimpulse auf CLK als zusätzliche Takte)
+        gpio_set_slew_rate(p, GPIO_SLEW_RATE_SLOW);
+        gpio_set_drive_strength(p, GPIO_DRIVE_STRENGTH_8MA);
+    }
     // OE zuerst auf high (aus), dann alle Pins als Ausgang
     pio_sm_set_pins_with_mask(pio, SM_ROW, 1u << PIN_OE, 1u << PIN_OE);
     pio_sm_set_consecutive_pindirs(pio, SM_DATA, PIN_R0, 6, true);

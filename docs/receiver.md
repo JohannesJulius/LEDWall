@@ -47,7 +47,12 @@ Rauschen heißt: Die Panels haben Strom, übernehmen aber keine Daten.
 1. **Testbild → Weiß**. Die LED am Zero wird orange. Bleibt die Wand unverändert, kommen Takt,
    Latch oder OE nicht an.
 2. **Panel-Takt** auf „langsam“ oder „sehr langsam“ stellen und **Ausprobieren** klicken.
-3. **Pin-Test** (Tab Geräte): eine Leitung fest auf 3,3 V oder 0 V legen und an der IN-Buchse des
+3. **Alle GND-Adern** des Flachbandkabels (Pin 4, 16, bei 16 Pixel hohen Panels auch Pin 8)
+   mit GND am Zero verbinden. Mit nur einer Masseader zählen die Panels Störimpulse auf CLK als
+   zusätzliche Takte.
+4. **Signale prüfen** (Pin-Test): zeigt, ob alle Leitungen wechseln. Mit **Panel-Takt
+   „Diagnose (1 MHz)“** testen. Klappt es dort, liegt es an der Signalqualität (Kabel, Masse).
+5. **Pin-Test** (Tab Geräte): eine Leitung fest auf 3,3 V oder 0 V legen und an der IN-Buchse des
    ersten Panels gegen GND nachmessen. So findest du vertauschte oder fehlende Adern.
    Über USB geht das auch mit `PIN 13 1` (GP13 = CLK auf High) und `PIN OFF`.
 

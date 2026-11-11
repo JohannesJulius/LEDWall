@@ -49,7 +49,7 @@ bool config_valid(const config_t *c, const char **why) {
     else if ((unsigned)c->panel_h / 2u * DISPLAY_BITPLANES * c->panel_count * c->panel_w > DISPLAY_BUF_MAX) w = "zu viele Pixel in der Kette";
     else if (c->color_order > 5) w = "order 0..5";
     else if (c->gamma_x10 < 10 || c->gamma_x10 > 30) w = "gamma 10..30";
-    else if (c->clk_div < 1 || c->clk_div > 16) w = "div 1..16";
+    else if (c->clk_div < 1 || c->clk_div > 64) w = "div 1..64";
     else if (c->baud < 9600 || c->baud > 7800000) w = "baud";
     if (why) *why = w;
     return w == NULL;
