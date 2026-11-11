@@ -18,6 +18,7 @@
 #define ADDR_CYC 33
 #define LIT_CYC 12
 static volatile uint sm_div = 2;
+static volatile bool sw_mode;  // Ausgabe per CPU statt PIO
 
 static PIO const pio = pio0;
 static uint data_offset, row_offset;
@@ -26,6 +27,51 @@ static volatile const uint8_t *pending;
 static volatile bool swap_req, pause_req, paused;
 static volatile uint32_t refreshes;
 static uint16_t g_chain_w, g_rows;
+
+// Software-Ausgabe: wie der Handtest, nur für das ganze Bild. Pro Zeile und Bitebene: LEDs aus,
+// Pixel schieben (Daten anlegen, dann CLK high), Adresse, Latch, dann LEDs für die Leuchtdauer an.
+#define M_DATA (0x3Fu << PIN_R0)
+#define M_CLK (1u << PIN_CLK)
+#define M_LAT (1u << PIN_LAT)
+#define M_OE (1u << PIN_OE)
+#define M_ADDR (0x1Fu << PIN_ADDR)
+static void __not_in_flash_func(sw_refresh)(const uint8_t *buf, uint w, uint rows, uint d) {
+    const uint32_t edge = 4u * d;
+    for (uint r = 0; r < rows; r++) {
+        for (uint b = 0; b < BP; b++) {
+            const uint8_t *p = buf + (r * BP + b) * w;
+            for (uint i = 0; i < w; i++) {
+                gpio_put_masked(M_DATA | M_CLK, (uint32_t)(p[i] & 0x3Fu) << PIN_R0); // Daten, CLK low
+                busy_wait_at_least_cycles(edge);
+                sio_hw->gpio_set = M_CLK;                                         // Übernahme
+                busy_wait_at_least_cycles(edge);
+            }
+            sio_hw->gpio_clr = M_CLK;
+            gpio_put_masked(M_ADDR, (uint32_t)r << PIN_ADDR);
+            busy_wait_at_least_cycles(32);
+            sio_hw->gpio_set = M_LAT;
+            busy_wait_at_least_cycles(32);
+            sio_hw->gpio_clr = M_LAT;
+            busy_wait_at_least_cycles(32);
+            sio_hw->gpio_clr = M_OE;                                              // LEDs an
+            busy_wait_at_least_cycles((uint32_t)LIT_CYC << b);
+            sio_hw->gpio_set = M_OE;                                              // LEDs aus
+        }
+    }
+}
+
+// Pins der Software- bzw. PIO-Ausgabe zuordnen (Core 1 steht dabei)
+static void assign_pins(bool sw) {
+    for (uint p = PIN_R0; p <= PIN_OE; p++) {
+        if (sw) {
+            gpio_init(p);
+            gpio_put(p, p == PIN_OE);
+            gpio_set_dir(p, GPIO_OUT);
+        } else {
+            pio_gpio_init(pio, p);
+        }
+    }
+}
 
 static void __not_in_flash_func(core1_main)(void) {
     multicore_lockout_victim_init(); // erlaubt Flash-Schreiben von Core 0 aus
@@ -37,6 +83,15 @@ static void __not_in_flash_func(core1_main)(void) {
         }
         const uint8_t *buf = (const uint8_t *)front;
         const uint w4 = g_chain_w / 4, rows = g_rows, stride = g_chain_w, d = sm_div;
+        if (sw_mode) {
+            sw_refresh(buf, stride, rows, d);
+            refreshes++;
+            if (swap_req) {
+                front = pending;
+                swap_req = false;
+            }
+            continue;
+        }
         const uint32_t addr_cyc = ADDR_CYC / d > 2 ? ADDR_CYC / d : 2;
         for (uint r = 0; r < rows; r++) {
             for (uint b = 0; b < BP; b++) {
@@ -57,11 +112,14 @@ static void __not_in_flash_func(core1_main)(void) {
     }
 }
 
-static void setup_sms(uint8_t clk_div) {
+static void setup_sms(uint8_t clk_div, bool sw) {
     pio_sm_set_enabled(pio, SM_DATA, false);
     pio_sm_set_enabled(pio, SM_ROW, false);
     const uint d = clk_div ? clk_div : 1;
     sm_div = d;
+    sw_mode = sw;
+    assign_pins(sw);
+    if (sw) return;
 
     pio_sm_config c = hub75_data_program_get_default_config(data_offset);
     sm_config_set_out_pins(&c, PIN_R0, 6);
@@ -90,7 +148,7 @@ static void setup_sms(uint8_t clk_div) {
     pio_sm_set_enabled(pio, SM_ROW, true);
 }
 
-void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t *blank) {
+void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, bool sw, const uint8_t *blank) {
     for (uint p = PIN_R0; p <= PIN_OE; p++) {
         pio_gpio_init(pio, p);
         // Weiche Flanken mit kräftigem Treiber: weniger Überschwingen und Übersprechen auf dem
@@ -109,18 +167,18 @@ void hub75_init(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t 
     g_chain_w = chain_w;
     g_rows = rows;
     front = blank;
-    setup_sms(clk_div);
+    setup_sms(clk_div, sw);
     multicore_launch_core1(core1_main);
 }
 
-void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const uint8_t *blank) {
+void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, bool sw, const uint8_t *blank) {
     pause_req = true;
     while (!paused) tight_loop_contents();
     g_chain_w = chain_w;
     g_rows = rows;
     front = blank;
     swap_req = false;
-    setup_sms(clk_div);
+    setup_sms(clk_div, sw);
     pause_req = false;
 }
 
@@ -138,7 +196,7 @@ void hub75_manual(bool on) {
             gpio_put(p, p == PIN_OE); // OE aus, alles andere low
         }
     } else {
-        for (uint p = PIN_R0; p <= PIN_OE; p++) pio_gpio_init(pio, p);
+        assign_pins(sw_mode);
         pause_req = false;
     }
     manual = on;
@@ -208,6 +266,8 @@ void hub75_show(const uint8_t *buf) {
 }
 
 // Während des Pin-Tests steht Core 1: nicht auf den Bildwechsel warten (sonst hinge Core 0)
+const uint8_t *hub75_front(void) { return (const uint8_t *)front; }
+
 bool hub75_swap_pending(void) { return swap_req && !manual; }
 
 uint32_t hub75_refresh_count(void) { return refreshes; }

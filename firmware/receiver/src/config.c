@@ -51,6 +51,7 @@ bool config_valid(const config_t *c, const char **why) {
     else if (c->gamma_x10 < 10 || c->gamma_x10 > 30) w = "gamma 10..30";
     else if (c->clk_div < 1 || c->clk_div > 64) w = "div 1..64";
     else if (c->baud < 9600 || c->baud > 7800000) w = "baud";
+    else if (c->out_mode > 1) w = "out 0..1";
     if (why) *why = w;
     return w == NULL;
 }
@@ -120,6 +121,7 @@ bool config_apply(config_t *c, const char *args, const char **why) {
         else if (!strcmp(k, "gamma")) t.gamma_x10 = (uint8_t)num;
         else if (!strcmp(k, "div")) t.clk_div = (uint8_t)num;
         else if (!strcmp(k, "baud")) t.baud = (uint32_t)strtoul(v, NULL, 10);
+        else if (!strcmp(k, "out")) t.out_mode = (uint8_t)(num ? 1 : 0);
         else { *why = "unbekannter Schlüssel"; return false; }
     }
     if (!config_valid(&t, why)) return false;
@@ -149,8 +151,8 @@ int config_json(const config_t *c, char *out, size_t cap) {
                         c->panels[i].x, c->panels[i].y, c->panels[i].flags);
     }
     if (len > 0 && (size_t)len < cap) {
-        len += snprintf(out + len, cap - len, "],\"order\":%u,\"bright\":%u,\"gamma\":%u,\"div\":%u,\"baud\":%lu",
-                        c->color_order, c->brightness, c->gamma_x10, c->clk_div, (unsigned long)c->baud);
+        len += snprintf(out + len, cap - len, "],\"order\":%u,\"bright\":%u,\"gamma\":%u,\"div\":%u,\"baud\":%lu,\"out\":%u",
+                        c->color_order, c->brightness, c->gamma_x10, c->clk_div, (unsigned long)c->baud, c->out_mode);
     }
     return len;
 }

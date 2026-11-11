@@ -86,7 +86,7 @@ static void apply_geometry(void) {
     display_setup(&disp, &cfg);
     // Core 1 zeigt währenddessen einen leeren Puffer; danach zeichnen wir in den anderen
     memset(bufs[0], 0, sizeof bufs[0]);
-    hub75_set_geometry(disp.chain_w, disp.rows, cfg.clk_div, bufs[0]);
+    hub75_set_geometry(disp.chain_w, disp.rows, cfg.clk_div, cfg.out_mode == 0, bufs[0]);
     back = 1;
     frame_ready = false;
 }
@@ -218,7 +218,7 @@ static void handle_line(char *line) {
         if (!config_apply(&cfg, arg, &why)) { printf("ERR %s\n", why); return; }
         cfg.crc = config_checksum(&cfg);
         if (old.width != cfg.width || old.height != cfg.height || old.panel_w != cfg.panel_w ||
-            old.panel_h != cfg.panel_h || old.panel_count != cfg.panel_count || old.clk_div != cfg.clk_div ||
+            old.panel_h != cfg.panel_h || old.panel_count != cfg.panel_count || old.clk_div != cfg.clk_div || old.out_mode != cfg.out_mode ||
             memcmp(old.panels, cfg.panels, sizeof cfg.panels) || old.color_order != cfg.color_order) {
             apply_geometry();
         } else {
@@ -257,6 +257,17 @@ static void handle_line(char *line) {
                 printf("ERR PIN <2..15> <0|1> oder PIN OFF\n");
             }
         }
+    } else if (!strcmp(line, "DUMP")) {
+        // Diagnose: Zustand und Inhalt des angezeigten Bildpuffers
+        const uint8_t *f = hub75_front();
+        uint32_t not3f = 0, zero = 0;
+        for (uint32_t i = 0; i < disp.buf_size; i++) { if (f[i] != 0x3F) not3f++; if (!f[i]) zero++; }
+        printf("DUMP {\"test\":%d,\"ident\":%d,\"got_frame\":%d,\"bright\":%u,\"lut255\":%u,\"front\":%d,\"size\":%lu,\"not3f\":%lu,\"zero\":%lu,\"out\":%u,\"bytes\":\"",
+               test_mode, showing_ident, got_frame, cfg.brightness, disp.lut[255],
+               f == bufs[0] ? 0 : f == bufs[1] ? 1 : -1, (unsigned long)disp.buf_size,
+               (unsigned long)not3f, (unsigned long)zero, cfg.out_mode);
+        for (int i = 0; i < 48 && (uint32_t)i < disp.buf_size; i++) printf("%02x", f[i]);
+        printf("\"}\n");
     } else if (!strcmp(line, "SIGNALS")) {
         // Selbstdiagnose der HUB75-Ausgänge: Pegelwechsel je Pin in 50 ms
         static const char *const names[14] = {"R1", "G1", "B1", "R2", "G2", "B2", "A", "B", "C", "D", "E", "CLK", "LAT", "OE"};
@@ -332,7 +343,7 @@ int main(void) {
     status_led_init();
     load_cfg();
     display_setup(&disp, &cfg);
-    hub75_init(disp.chain_w, disp.rows, cfg.clk_div, bufs[0]);
+    hub75_init(disp.chain_w, disp.rows, cfg.clk_div, cfg.out_mode == 0, bufs[0]);
     back = 1;
     lw_parser_init(&uart_parser, uart_payload, sizeof uart_payload, on_packet, NULL);
     lw_parser_init(&usb_parser, usb_payload, sizeof usb_payload, on_packet, (void *)1);

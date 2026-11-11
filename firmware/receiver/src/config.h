@@ -23,6 +23,7 @@ typedef struct {
     uint16_t size;
     uint8_t address;       // 1..254
     char name[24];
+    uint8_t out_mode;      // 0 = Software-Ausgabe (CPU, sicher), 1 = PIO (schnell); belegt das frühere Füllbyte
     uint16_t width, height;      // Wandbild, z. B. 64 x 48
     uint16_t panel_w, panel_h;   // ein HUB75-Panel, z. B. 64 x 16
     uint8_t panel_count;         // Panels in der Kette (Reihenfolge = Datenfluss)
