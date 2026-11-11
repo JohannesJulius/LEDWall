@@ -593,13 +593,20 @@
       const PINS = [['R1', 2, 1], ['G1', 3, 2], ['B1', 4, 3], ['R2', 5, 5], ['G2', 6, 6], ['B2', 7, 7], ['A', 8, 9], ['B', 9, 10],
         ['C', 10, 11], ['D', 11, 12], ['E', 12, 8], ['CLK', 13, 13], ['LAT', 14, 14], ['OE', 15, 15]];
       const sel = el('select', null, PINS.map(([n, gp, hp]) => el('option', { value: gp }, n + ' – GP' + gp + ' – HUB75-Pin ' + hp)));
+      const shiftRow = el('select', null, [0, 1, 2, 3, 4, 5, 6, 7].map((r) => el('option', { value: r }, String(r + 1))));
       const set = (v) => checked(port, 'PIN ' + sel.value + ' ' + v).then((r) => { if (r.ok) A.toast('GP' + sel.value + ' = ' + (v ? '3,3 V' : '0 V') + ' – jetzt am Panel nachmessen'); });
       cardPins = el('div', { class: 'card' }, el('h3', null, 'Pin-Test'),
         el('p', { class: 'muted', style: 'font-size:12px;margin-top:0' }, 'Hält die Bildausgabe an und legt die gewählte Leitung fest auf 3,3 V oder 0 V. Mit dem Multimeter an der IN-Buchse des ersten Panels gegen GND messen (Pin 4 oder 16). OE ist sonst immer 3,3 V (Panels aus).'),
         el('div', { class: 'actions', style: 'margin-top:0' }, sel,
           el('button', { onclick: () => set(1) }, '3,3 V (High)'),
           el('button', { onclick: () => set(0) }, '0 V (Low)'),
-          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Pin-Test beenden')));
+          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Pin-Test beenden')),
+        el('p', { class: 'muted', style: 'font-size:12px' }, 'Handtest ohne schnelle Ausgabe: schiebt eine Farbe langsam in alle Panels und schaltet eine Zeile ein. Erwartet: in jedem Panel eine farbige Linie oben und eine in der Mitte. Zeile wechseln: die Linie wandert.'),
+        el('div', { class: 'actions', style: 'margin-top:0' },
+          [['Rot', '1 0 0'], ['Grün', '0 1 0'], ['Blau', '0 0 1'], ['Weiß', '1 1 1']].map(([n, c]) =>
+            el('button', { onclick: () => checked(port, 'SHIFT ' + c + ' ' + shiftRow.value) }, n)),
+          el('label', { class: 'inline' }, 'Zeile', shiftRow),
+          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Beenden')));
     }
 
     return { cards: [cardPanels, cardLook, cardSave, cardTest, cardPins].filter(Boolean) };

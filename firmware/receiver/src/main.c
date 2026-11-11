@@ -257,6 +257,15 @@ static void handle_line(char *line) {
                 printf("ERR PIN <2..15> <0|1> oder PIN OFF\n");
             }
         }
+    } else if (!strcmp(line, "SHIFT")) {
+        // SHIFT <r> <g> <b> [zeile]: Handtest ohne PIO (Ende mit PIN OFF)
+        int r = 0, g = 0, b = 0, row = 0;
+        if (sscanf(arg, "%d %d %d %d", &r, &g, &b, &row) >= 3 && row >= 0 && row < 32) {
+            hub75_manual_shift(r != 0, g != 0, b != 0, (unsigned)row);
+            printf("OK\n");
+        } else {
+            printf("ERR SHIFT <r> <g> <b> [zeile]\n");
+        }
     } else if (!strcmp(line, "TEST")) {
         uint8_t m = (uint8_t)atoi(arg);
         on_packet((void *)1, 0, LW_TEST, &m, 1);

@@ -20,3 +20,5 @@ uint32_t hub75_refresh_count(void);
 // Pin-Test: true hält die Bildausgabe an und schaltet GP2..GP15 auf manuelle Ausgänge
 void hub75_manual(bool on);
 bool hub75_manual_set(unsigned pin, bool value);
+// Handtest: Farbe langsam in die Kette schieben, latchen, Zeile `row` einschalten
+void hub75_manual_shift(bool r, bool g, bool b, unsigned row);
