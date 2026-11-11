@@ -22,3 +22,5 @@ void hub75_manual(bool on);
 bool hub75_manual_set(unsigned pin, bool value);
 // Handtest: Farbe langsam in die Kette schieben, latchen, Zeile `row` einschalten
 void hub75_manual_shift(bool r, bool g, bool b, unsigned row);
+// Selbstdiagnose: Pegelwechsel je Pin (GP2..GP15) in `ms` Millisekunden zählen
+void hub75_signals(uint32_t counts[14], uint32_t *pio_mask, uint32_t *oe_mask, uint32_t *high_mask, uint32_t ms);

@@ -257,6 +257,16 @@ static void handle_line(char *line) {
                 printf("ERR PIN <2..15> <0|1> oder PIN OFF\n");
             }
         }
+    } else if (!strcmp(line, "SIGNALS")) {
+        // Selbstdiagnose der HUB75-Ausgänge: Pegelwechsel je Pin in 50 ms
+        static const char *const names[14] = {"R1", "G1", "B1", "R2", "G2", "B2", "A", "B", "C", "D", "E", "CLK", "LAT", "OE"};
+        uint32_t cnt[14], pm, om, hm;
+        hub75_signals(cnt, &pm, &om, &hm, 50);
+        printf("SIGNALS {\"ms\":50,\"refresh\":%lu,\"pio\":%lu,\"oe\":%lu,\"high\":%lu,\"div\":%u,\"chain\":%u,\"rows\":%u",
+               (unsigned long)hub75_refresh_count(), (unsigned long)pm, (unsigned long)om, (unsigned long)hm,
+               cfg.clk_div, disp.chain_w, disp.rows);
+        for (int i = 0; i < 14; i++) printf(",\"%s\":%lu", names[i], (unsigned long)cnt[i]);
+        printf("}\n");
     } else if (!strcmp(line, "SHIFT")) {
         // SHIFT <r> <g> <b> [zeile]: Handtest ohne PIO (Ende mit PIN OFF)
         int r = 0, g = 0, b = 0, row = 0;
