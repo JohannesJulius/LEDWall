@@ -12,9 +12,12 @@
 #define BP DISPLAY_BITPLANES
 #define SM_DATA 0
 #define SM_ROW 1
-#define ROW_CLKDIV 2
-#define PULSE_BASE 6  // Takte (bei ROW_CLKDIV) für die niedrigste Bitebene
-static volatile uint row_scale = 1;  // bei sehr langsamem Pixeltakt auch Latch/Adresse verlangsamen
+// Zeiten wie im bewährten hub75_dj_engine (dort 150 MHz, Teiler 2): Latch-Pause ≈ 180 ns,
+// Adress-Pause ≈ 260 ns, niedrigste Bitebene ≈ 100 ns Leuchtdauer (Werte in Takten bei 125 MHz)
+#define LATCH_CYC 23
+#define ADDR_CYC 33
+#define LIT_CYC 12
+static volatile uint sm_div = 2;
 
 static PIO const pio = pio0;
 static uint data_offset, row_offset;
@@ -23,18 +26,6 @@ static volatile const uint8_t *pending;
 static volatile bool swap_req, pause_req, paused;
 static volatile uint32_t refreshes;
 static uint16_t g_chain_w, g_rows;
-
-static inline void wait_tx_stall(uint sm) {
-    const uint32_t mask = 1u << (PIO_FDEBUG_TXSTALL_LSB + sm);
-    pio->fdebug = mask;
-    while (!(pio->fdebug & mask)) tight_loop_contents();
-}
-
-// Zeilen-SM fertig: Wort abgeholt und OE-Puls vorbei (SM wartet wieder auf das nächste Wort)
-static inline void wait_row_idle(void) {
-    while (!pio_sm_is_tx_fifo_empty(pio, SM_ROW)) tight_loop_contents();
-    wait_tx_stall(SM_ROW);
-}
 
 static void __not_in_flash_func(core1_main)(void) {
     multicore_lockout_victim_init(); // erlaubt Flash-Schreiben von Core 0 aus
@@ -45,17 +36,17 @@ static void __not_in_flash_func(core1_main)(void) {
             paused = false;
         }
         const uint8_t *buf = (const uint8_t *)front;
-        const uint w4 = g_chain_w / 4, rows = g_rows, stride = g_chain_w;
+        const uint w4 = g_chain_w / 4, rows = g_rows, stride = g_chain_w, d = sm_div;
+        const uint32_t addr_cyc = ADDR_CYC / d > 2 ? ADDR_CYC / d : 2;
         for (uint r = 0; r < rows; r++) {
             for (uint b = 0; b < BP; b++) {
+                // Daten und Zeilenbefehl in die FIFOs; die beiden SMs synchronisieren sich selbst
                 const uint32_t *src = (const uint32_t *)(buf + (r * BP + b) * stride);
-                // Erst schieben, wenn der vorige OE-Puls vorbei ist (LEDs aus). Während die Panels
-                // leuchten, verschiebt der LED-Strom die Masse gegenüber dem Zero und verfälscht CLK.
-                wait_row_idle();
                 for (uint i = 0; i < w4; i++) pio_sm_put_blocking(pio, SM_DATA, src[i]);
-                wait_tx_stall(SM_DATA);
-                const uint32_t pulse = ((uint32_t)PULSE_BASE << b) / row_scale;
-                pio_sm_put_blocking(pio, SM_ROW, r | ((pulse ? pulse : 1) - 1) << 5);
+                const uint32_t lit = ((uint32_t)LIT_CYC << b) / d;
+                pio_sm_put_blocking(pio, SM_ROW, r | (addr_cyc << 5));
+                pio_sm_put_blocking(pio, SM_ROW, lit ? lit - 1 : 0);
+                pio_sm_put_blocking(pio, SM_ROW, 0);
             }
         }
         refreshes++;
@@ -69,24 +60,32 @@ static void __not_in_flash_func(core1_main)(void) {
 static void setup_sms(uint8_t clk_div) {
     pio_sm_set_enabled(pio, SM_DATA, false);
     pio_sm_set_enabled(pio, SM_ROW, false);
+    const uint d = clk_div ? clk_div : 1;
+    sm_div = d;
 
     pio_sm_config c = hub75_data_program_get_default_config(data_offset);
     sm_config_set_out_pins(&c, PIN_R0, 6);
     sm_config_set_sideset_pins(&c, PIN_CLK);
     sm_config_set_out_shift(&c, true, true, 32);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
-    sm_config_set_clkdiv(&c, clk_div);
+    sm_config_set_clkdiv(&c, (float)d);
     pio_sm_init(pio, SM_DATA, data_offset, &c);
 
     c = hub75_row_program_get_default_config(row_offset);
     sm_config_set_out_pins(&c, PIN_ADDR, 5);
     sm_config_set_sideset_pins(&c, PIN_LAT);
     sm_config_set_out_shift(&c, true, true, 32);
-    // Diagnose-Takte (Teiler ≥ 16): Latch und Adresse proportional länger, OE-Zeiten gleich
-    row_scale = clk_div >= 16 ? clk_div / 8u : 1u;
-    sm_config_set_clkdiv(&c, (float)(ROW_CLKDIV * row_scale));
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    sm_config_set_clkdiv(&c, (float)d);
     pio_sm_init(pio, SM_ROW, row_offset, &c);
 
+    // Y vorbelegen: Daten-SM = Pixel pro Zeile - 1, Zeilen-SM = Latch-Pause
+    pio_sm_put(pio, SM_DATA, (uint32_t)g_chain_w - 1);
+    pio_sm_exec(pio, SM_DATA, pio_encode_out(pio_y, 32));
+    pio_sm_put(pio, SM_ROW, LATCH_CYC / d > 2 ? LATCH_CYC / d : 2);
+    pio_sm_exec(pio, SM_ROW, pio_encode_out(pio_y, 32));
+
+    pio->irq = 0x3; // IRQ 0/1 löschen
     pio_sm_set_enabled(pio, SM_DATA, true);
     pio_sm_set_enabled(pio, SM_ROW, true);
 }
