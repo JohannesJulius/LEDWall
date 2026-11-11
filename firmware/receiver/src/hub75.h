@@ -17,3 +17,6 @@ void hub75_set_geometry(uint16_t chain_w, uint16_t rows, uint8_t clk_div, const 
 void hub75_show(const uint8_t *buf);
 bool hub75_swap_pending(void);
 uint32_t hub75_refresh_count(void);
+// Pin-Test: true hält die Bildausgabe an und schaltet GP2..GP15 auf manuelle Ausgänge
+void hub75_manual(bool on);
+bool hub75_manual_set(unsigned pin, bool value);

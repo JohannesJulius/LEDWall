@@ -41,7 +41,7 @@
   const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];
   const TESTS = [[1, 'Farben'], [2, 'Verlauf'], [3, 'Panels'], [4, 'Raster'], [5, 'Weiß'], [0, 'Aus']];
   const BAUDS = [1000000, 2000000, 3000000, 4000000];
-  const CLOCKS = [[2, 'schnell'], [3, 'normal'], [5, 'langsam'], [8, 'sehr langsam']];
+  const CLOCKS = [[2, 'sehr schnell (31 MHz)'], [3, 'schnell (21 MHz)'], [5, 'normal (12,5 MHz)'], [8, 'langsam (7,8 MHz)'], [12, 'sehr langsam (5,2 MHz)']];
 
   // ---------------------------------------------------------------- Hilfen
 
@@ -587,7 +587,22 @@
         : el('label', { class: 'inline', style: 'margin-top:12px;display:flex' }, live,
           ' Live-Vorschau: das aktuelle Pattern ' + (direct ? 'per WLAN' : 'über USB') + ' auf dieser Wand zeigen'));
 
-    return { cards: [cardPanels, cardLook, cardSave, cardTest] };
+    // Pin-Test (nur Empfänger): einzelne HUB75-Leitung fest auf High/Low, zum Nachmessen am Panel
+    let cardPins = null;
+    if (!direct) {
+      const PINS = [['R1', 2, 1], ['G1', 3, 2], ['B1', 4, 3], ['R2', 5, 5], ['G2', 6, 6], ['B2', 7, 7], ['A', 8, 9], ['B', 9, 10],
+        ['C', 10, 11], ['D', 11, 12], ['E', 12, 8], ['CLK', 13, 13], ['LAT', 14, 14], ['OE', 15, 15]];
+      const sel = el('select', null, PINS.map(([n, gp, hp]) => el('option', { value: gp }, n + ' – GP' + gp + ' – HUB75-Pin ' + hp)));
+      const set = (v) => checked(port, 'PIN ' + sel.value + ' ' + v).then((r) => { if (r.ok) A.toast('GP' + sel.value + ' = ' + (v ? '3,3 V' : '0 V') + ' – jetzt am Panel nachmessen'); });
+      cardPins = el('div', { class: 'card' }, el('h3', null, 'Pin-Test'),
+        el('p', { class: 'muted', style: 'font-size:12px;margin-top:0' }, 'Hält die Bildausgabe an und legt die gewählte Leitung fest auf 3,3 V oder 0 V. Mit dem Multimeter an der IN-Buchse des ersten Panels gegen GND messen (Pin 4 oder 16). OE ist sonst immer 3,3 V (Panels aus).'),
+        el('div', { class: 'actions', style: 'margin-top:0' }, sel,
+          el('button', { onclick: () => set(1) }, '3,3 V (High)'),
+          el('button', { onclick: () => set(0) }, '0 V (Low)'),
+          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Pin-Test beenden')));
+    }
+
+    return { cards: [cardPanels, cardLook, cardSave, cardTest, cardPins].filter(Boolean) };
   }
 
   function wiringCard(open) {

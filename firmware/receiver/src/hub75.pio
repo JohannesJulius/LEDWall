@@ -12,11 +12,14 @@
 ; Zeile auswählen, Latch-Puls, dann OE für die gewünschte Zeit einschalten.
 ; OUT-Pins: Adresse A..E, Side-Set: LAT (Bit 0) und OE (Bit 1, aktiv low).
 ; FIFO-Wort: Bit 0..4 Zeile, Bit 5..31 Leuchtdauer in Takten.
+; Großzügige Zeiten (bei clkdiv 2 je 8 Takte = 128 ns): Viele Panels übernehmen kürzere
+; Latch-Pulse über lange Flachbandkabel und 3,3-V-Pegel nicht.
 .program hub75_row
 .side_set 2
 .wrap_target
-    out pins, 5     [2] side 0b10
-    out x, 27       [2] side 0b11
+    out pins, 5     [7] side 0b10   ; Adresse anlegen, OE aus
+    nop             [7] side 0b11   ; LAT high
+    out x, 27       [7] side 0b10   ; LAT low, Adresse steht
 pulse:
-    jmp x-- pulse       side 0b00
+    jmp x-- pulse       side 0b00   ; OE an
 .wrap

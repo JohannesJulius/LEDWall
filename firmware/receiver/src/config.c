@@ -23,7 +23,7 @@ void config_defaults(config_t *c) {
     c->color_order = 0;
     c->brightness = 255;
     c->gamma_x10 = 22;
-    c->clk_div = 3;
+    c->clk_div = 5; // ≈ 12,5 MHz Pixeltakt, verträgt auch lange Kabel
     c->baud = 2000000;
 }
 

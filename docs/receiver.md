@@ -40,6 +40,17 @@ Vom Sender: **TX des Pico 2W → GP1** und GND ↔ GND.
 Firmware-Updates kommen mit App-Updates. Ist die Firmware auf dem Zero älter, zeigt die App
 **Update** an und spielt sie mit einem Klick ein (kein Knopfdrücken nötig).
 
+## Fehlersuche: Panels zeigen nur Rauschen
+
+Rauschen heißt: Die Panels haben Strom, übernehmen aber keine Daten.
+
+1. **Testbild → Weiß**. Die LED am Zero wird orange. Bleibt die Wand unverändert, kommen Takt,
+   Latch oder OE nicht an.
+2. **Panel-Takt** auf „langsam“ oder „sehr langsam“ stellen und **Ausprobieren** klicken.
+3. **Pin-Test** (Tab Geräte): eine Leitung fest auf 3,3 V oder 0 V legen und an der IN-Buchse des
+   ersten Panels gegen GND nachmessen. So findest du vertauschte oder fehlende Adern.
+   Über USB geht das auch mit `PIN 13 1` (GP13 = CLK auf High) und `PIN OFF`.
+
 ## Technik
 
 - C mit Pico SDK 2.1, Quellcode in `firmware/receiver/`
