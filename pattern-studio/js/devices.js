@@ -37,11 +37,18 @@
     { name: '3 × 64×16, Schlange (Mitte gedreht)', pw: 64, ph: 16, panels: [[0, 0, 0], [0, 16, 3], [0, 32, 0]] },
     { name: '6 × 32×16 (2 × 3), Zeilen gleich', pw: 32, ph: 16, panels: [[0, 0, 0], [32, 0, 0], [0, 16, 0], [32, 16, 0], [0, 32, 0], [32, 32, 0]] },
     { name: '6 × 32×16 (2 × 3), Schlange', pw: 32, ph: 16, panels: [[0, 0, 0], [32, 0, 0], [32, 16, 3], [0, 16, 3], [0, 32, 0], [32, 32, 0]] },
+    { name: '3 × 64×16 übereinander, Kette beginnt unten', pw: 64, ph: 16, panels: [[0, 32, 0], [0, 16, 0], [0, 0, 0]] },
+    { name: '6 × 32×16 (2 × 3), Kette beginnt unten', pw: 32, ph: 16, panels: [[0, 32, 0], [32, 32, 0], [0, 16, 0], [32, 16, 0], [0, 0, 0], [32, 0, 0]] },
+    { name: '6 × 32×16 (2 × 3), Schlange, Kette beginnt unten', pw: 32, ph: 16, panels: [[0, 32, 0], [32, 32, 0], [32, 16, 3], [0, 16, 3], [0, 0, 0], [32, 0, 0]] },
     { name: '1 × 64×32 + Rest frei', pw: 64, ph: 32, panels: [[0, 0, 0]] },
   ];
   const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];
   const TESTS = [[1, 'Farben'], [2, 'Verlauf'], [3, 'Panels'], [4, 'Raster'], [5, 'Weiß'], [0, 'Aus']];
   const BAUDS = [1000000, 2000000, 3000000, 4000000];
+  // Debug-Funktionen (Pin-Test, Handtest, Signale, Bildspeicher, Diagnose-Takt, Ausgabe-Wahl)
+  // nur bei eingeschaltetem Debug-Schalter im Tab Geräte zeigen
+  let debug = false;
+  try { debug = localStorage.getItem('ledwall-debug') === '1'; } catch (e) { /* aus */ }
   const CLOCKS = [[1, 'sehr schnell (13,9 MHz)'], [2, 'normal (6,9 MHz)'], [3, 'langsamer (4,6 MHz)'], [5, 'langsam (2,8 MHz)'], [8, 'sehr langsam (1,7 MHz)'], [31, 'Diagnose (0,45 MHz)']];
 
   // ---------------------------------------------------------------- Hilfen
@@ -580,8 +587,8 @@
       row('Helligkeit', bright, brightVal),
       row('Gamma', selectInput(e, 'gamma', [[18, '1,8'], [20, '2,0'], [22, '2,2 (Standard)'], [25, '2,5'], [28, '2,8']], markDirty)),
       row('Farbreihenfolge', selectInput(e, 'order', ORDERS.map((o, i) => [i, o]), markDirty), el('span', { class: 'muted' }, 'falls Rot und Blau vertauscht sind')),
-      row('Panel-Takt', selectInput(e, 'div', CLOCKS, markDirty), el('span', { class: 'muted' }, 'langsamer bei Flackern / langen Kabeln')),
-      e.out === undefined ? null : row('Ausgabe', selectInput(e, 'out', [[0, 'Software (sicher)'], [1, 'PIO (schnell)']], markDirty), el('span', { class: 'muted' }, 'Software arbeitet wie der Handtest')),
+      row('Panel-Takt', selectInput(e, 'div', CLOCKS.filter(([v]) => debug || v < 16 || v === e.div), markDirty), el('span', { class: 'muted' }, 'langsamer bei Flackern / langen Kabeln')),
+      e.out === undefined || !debug ? null : row('Ausgabe', selectInput(e, 'out', [[0, 'Software (sicher)'], [1, 'PIO (schnell)']], markDirty), el('span', { class: 'muted' }, 'Software arbeitet wie der Handtest')),
       direct ? null : row('UART-Baudrate', selectInput(e, 'baud', BAUDS.map((b) => [b, (b / 1e6) + ' MBaud']), markDirty), el('span', { class: 'muted' }, 'muss zum Sender passen')));
 
     const cardSave = el('div', { class: 'card' },
@@ -608,7 +615,7 @@
 
     // Pin-Test (nur Empfänger): einzelne HUB75-Leitung fest auf High/Low, zum Nachmessen am Panel
     let cardPins = null;
-    if (!direct) {
+    if (!direct && debug) {
       const PINS = [['R1', 2, 1], ['G1', 3, 2], ['B1', 4, 3], ['R2', 5, 5], ['G2', 6, 6], ['B2', 7, 7], ['A', 8, 9], ['B', 9, 10],
         ['C', 10, 11], ['D', 11, 12], ['E', 12, 8], ['CLK', 13, 13], ['LAT', 14, 14], ['OE', 15, 15]];
       const sel = el('select', null, PINS.map(([n, gp, hp]) => el('option', { value: gp }, n + ' – GP' + gp + ' – HUB75-Pin ' + hp)));
@@ -947,6 +954,16 @@
     select: (id) => { st.sel = id; renderList(); renderDetail(); },
   };
 
+  const dbgBtn = document.getElementById('btnDebug');
+  const showDebug = () => { dbgBtn.classList.toggle('active', debug); dbgBtn.title = debug ? 'Debug-Funktionen ausblenden' : 'Debug-Funktionen einblenden (Pin-Test, Signale, Bildspeicher, Diagnose)'; };
+  dbgBtn.onclick = () => {
+    debug = !debug;
+    try { localStorage.setItem('ledwall-debug', debug ? '1' : '0'); } catch (e) { /* egal */ }
+    showDebug();
+    renderDetail();
+    A.toast(debug ? 'Debug-Funktionen eingeblendet' : 'Debug-Funktionen ausgeblendet');
+  };
+  showDebug();
   document.getElementById('btnDevRescan').onclick = () => A.nativePost && A.NATIVE && A.nativePost('device', { action: 'state' });
   st.devices = netDevices();
   for (const h of st.netHosts) send('net:' + h, 'PATTERNS');
