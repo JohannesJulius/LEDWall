@@ -37,6 +37,9 @@
     { name: '3 × 64×16, Schlange (Mitte gedreht)', pw: 64, ph: 16, panels: [[0, 0, 0], [0, 16, 3], [0, 32, 0]] },
     { name: '6 × 32×16 (2 × 3), Zeilen gleich', pw: 32, ph: 16, panels: [[0, 0, 0], [32, 0, 0], [0, 16, 0], [32, 16, 0], [0, 32, 0], [32, 32, 0]] },
     { name: '6 × 32×16 (2 × 3), Schlange', pw: 32, ph: 16, panels: [[0, 0, 0], [32, 0, 0], [32, 16, 3], [0, 16, 3], [0, 32, 0], [32, 32, 0]] },
+    { name: '3 × 64×16 übereinander, Kette beginnt unten', pw: 64, ph: 16, panels: [[0, 32, 0], [0, 16, 0], [0, 0, 0]] },
+    { name: '6 × 32×16 (2 × 3), Kette beginnt unten', pw: 32, ph: 16, panels: [[0, 32, 0], [32, 32, 0], [0, 16, 0], [32, 16, 0], [0, 0, 0], [32, 0, 0]] },
+    { name: '6 × 32×16 (2 × 3), Schlange, Kette beginnt unten', pw: 32, ph: 16, panels: [[0, 32, 0], [32, 32, 0], [32, 16, 3], [0, 16, 3], [0, 0, 0], [32, 0, 0]] },
     { name: '1 × 64×32 + Rest frei', pw: 64, ph: 32, panels: [[0, 0, 0]] },
   ];
   const ORDERS = ['RGB', 'RBG', 'GRB', 'GBR', 'BRG', 'BGR'];

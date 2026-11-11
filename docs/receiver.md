@@ -30,7 +30,7 @@ Vom Sender: **TX des Pico 2W → GP1** und GND ↔ GND.
    Die App zeigt „RP2040 im BOOTSEL-Modus“ → **Empfänger-Firmware installieren**.
 2. Der Zero startet neu, erscheint als Empfänger und zeigt seine Adresse groß auf der Wand.
 3. Unter **Geräte** Adresse, Name und Panel-Aufteilung einstellen (Vorlagen für 3 × 64×16 und
-   6 × 32×16). Mit **Testbild → Panels** prüfen: Jede Zahl muss lesbar sein, der Pfeil nach
+   6 × 32×16, jeweils auch „Kette beginnt unten“). Mit **Testbild → Panels** prüfen: Jede Zahl muss lesbar sein, der Pfeil nach
    rechts zeigen. Sonst Panel spiegeln oder die Reihenfolge ändern.
 4. **Auf Gerät speichern**. Die Einstellungen bleiben im Flash des Zero.
 5. Optional die **Live-Vorschau** einschalten: Die App schickt das aktuelle Pattern über USB
