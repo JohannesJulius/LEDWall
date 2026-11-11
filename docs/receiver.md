@@ -44,6 +44,9 @@ Firmware-Updates kommen mit App-Updates. Ist die Firmware auf dem Zero älter, z
 
 Rauschen heißt: Die Panels haben Strom, übernehmen aber keine Daten.
 
+Die Werkzeuge dafür (Pin-Test, Handtest, Signale, Bildspeicher, Diagnose-Takt, Ausgabe) erscheinen
+erst, wenn im Tab **Geräte** oben der Schalter **Debug** eingeschaltet ist.
+
 1. **Testbild → Weiß**. Die LED am Zero wird orange. Bleibt die Wand unverändert, kommen Takt,
    Latch oder OE nicht an.
 2. **Panel-Takt** auf „langsam“ oder „sehr langsam“ stellen und **Ausprobieren** klicken.
