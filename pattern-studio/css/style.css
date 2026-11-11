@@ -242,3 +242,5 @@ body.native .native-only { display: block; }
 .beat-big i.one.cur { background: rgba(255,61,127,.45); }
 .beat-big i.one.hit { background: var(--accent); color: #fff; }
 .bar-num { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--text); }
+.sig-out { background: var(--panel2); border-radius: 6px; padding: 8px 10px; font: 11px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; user-select: text; -webkit-user-select: text; margin: 8px 0 0; }
+.sig-out:empty { display: none; }

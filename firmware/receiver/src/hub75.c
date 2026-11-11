@@ -4,6 +4,8 @@
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
+#include "hardware/structs/io_bank0.h"
+#include "hardware/structs/sio.h"
 #include "hub75.pio.h"
 #include "pico/multicore.h"
 
@@ -152,6 +154,35 @@ void hub75_manual_shift(bool r, bool g, bool b, unsigned row) {
     for (uint k = 0; k < 5; k++) gpio_put(PIN_ADDR + k, (row >> k) & 1u);
     busy_wait_us(2);
     gpio_put(PIN_OE, 0);
+}
+
+// Selbstdiagnose: zählt für GP2..GP15 die Pegelwechsel am Pad (gelesen über SIO-Eingang, also
+// das, was wirklich am Pin anliegt) und meldet Funktion und Ausgangstreiber je Pin.
+void hub75_signals(uint32_t counts[14], uint32_t *pio_mask, uint32_t *oe_mask, uint32_t *high_mask, uint32_t ms) {
+    for (int i = 0; i < 14; i++) counts[i] = 0;
+    uint32_t last = sio_hw->gpio_in, highs = 0;
+    const absolute_time_t until = make_timeout_time_ms(ms);
+    while (!time_reached(until)) {
+        for (int k = 0; k < 256; k++) {
+            const uint32_t now = sio_hw->gpio_in;
+            uint32_t ch = (now ^ last) & 0xFFFCu;
+            highs |= now;
+            last = now;
+            while (ch) {
+                const int p = __builtin_ctz(ch);
+                counts[p - 2]++;
+                ch &= ch - 1;
+            }
+        }
+    }
+    uint32_t pm = 0, om = 0;
+    for (uint p = PIN_R0; p <= PIN_OE; p++) {
+        if ((io_bank0_hw->io[p].ctrl & IO_BANK0_GPIO0_CTRL_FUNCSEL_BITS) == GPIO_FUNC_PIO0) pm |= 1u << p;
+        if (io_bank0_hw->io[p].status & IO_BANK0_GPIO0_STATUS_OETOPAD_BITS) om |= 1u << p;
+    }
+    *pio_mask = pm;
+    *oe_mask = om;
+    *high_mask = highs & 0xFFFCu;
 }
 
 void hub75_show(const uint8_t *buf) {

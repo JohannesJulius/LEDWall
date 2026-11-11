@@ -13,6 +13,7 @@
   const $ = (id) => document.getElementById(id);
 
   const st = {
+    signals: {}, sigEl: {},
     devices: [],          // vom DeviceManager
     firmware: { receiver: { version: '', available: false }, sender: { version: '', available: false } },
     patterns: {},         // Sender-Port -> Patternliste
@@ -248,6 +249,18 @@
         if (selected() && selected().port === port && (first || !st.dirty[port])) renderDetail();
         else updateStatusLine();
       } catch (e) { /* unvollständige Zeile */ }
+      return;
+    }
+    if (line.startsWith('SIGNALS ')) {
+      try {
+        const j = JSON.parse(line.slice(8));
+        const names = ['R1', 'G1', 'B1', 'R2', 'G2', 'B2', 'A', 'B', 'C', 'D', 'E', 'CLK', 'LAT', 'OE'];
+        const pins = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        const rows = names.map((n, i) => n.padEnd(4) + String(j[n]).padStart(8) + ' Wechsel' +
+          (((j.pio >> pins[i]) & 1) ? '' : '  (nicht PIO!)') + (((j.oe >> pins[i]) & 1) ? '' : '  (kein Ausgang!)'));
+        st.signals[port] = 'Bildwiederholungen: ' + j.refresh + ' · Takt-Teiler ' + j.div + ' · Kette ' + j.chain + ' px · ' + j.rows + ' Zeilen\n' + rows.join('\n') + '\n\nRoh: ' + line.slice(8);
+        if (st.sigEl[port]) st.sigEl[port].textContent = st.signals[port];
+      } catch (e) { /* unvollständig */ }
       return;
     }
     if (line === 'OK' || line.startsWith('ERR')) {
@@ -594,6 +607,11 @@
         ['C', 10, 11], ['D', 11, 12], ['E', 12, 8], ['CLK', 13, 13], ['LAT', 14, 14], ['OE', 15, 15]];
       const sel = el('select', null, PINS.map(([n, gp, hp]) => el('option', { value: gp }, n + ' – GP' + gp + ' – HUB75-Pin ' + hp)));
       const shiftRow = el('select', null, [0, 1, 2, 3, 4, 5, 6, 7].map((r) => el('option', { value: r }, String(r + 1))));
+      st.shiftRow = st.shiftRow || {};
+      shiftRow.value = st.shiftRow[port] || 0;
+      shiftRow.addEventListener('change', () => { st.shiftRow[port] = shiftRow.value; });
+      const sigOut = el('pre', { class: 'sig-out' }, st.signals[port] || '');
+      st.sigEl[port] = sigOut;
       const set = (v) => checked(port, 'PIN ' + sel.value + ' ' + v).then((r) => { if (r.ok) A.toast('GP' + sel.value + ' = ' + (v ? '3,3 V' : '0 V') + ' – jetzt am Panel nachmessen'); });
       cardPins = el('div', { class: 'card' }, el('h3', null, 'Pin-Test'),
         el('p', { class: 'muted', style: 'font-size:12px;margin-top:0' }, 'Hält die Bildausgabe an und legt die gewählte Leitung fest auf 3,3 V oder 0 V. Mit dem Multimeter an der IN-Buchse des ersten Panels gegen GND messen (Pin 4 oder 16). OE ist sonst immer 3,3 V (Panels aus).'),
@@ -606,7 +624,11 @@
           [['Rot', '1 0 0'], ['Grün', '0 1 0'], ['Blau', '0 0 1'], ['Weiß', '1 1 1']].map(([n, c]) =>
             el('button', { onclick: () => checked(port, 'SHIFT ' + c + ' ' + shiftRow.value) }, n)),
           el('label', { class: 'inline' }, 'Zeile', shiftRow),
-          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Beenden')));
+          el('button', { onclick: () => checked(port, 'PIN OFF') }, 'Beenden')),
+        el('p', { class: 'muted', style: 'font-size:12px' }, 'Signale prüfen: Der Empfänger zählt 50 ms lang, wie oft jede Leitung im normalen Betrieb wechselt (vorher „Beenden“, damit die Bildausgabe läuft). 0 = Leitung steht still.'),
+        el('div', { class: 'actions', style: 'margin-top:0' },
+          el('button', { onclick: () => { send(port, 'PIN OFF'); send(port, 'TEST 5'); setTimeout(() => send(port, 'SIGNALS'), 300); } }, 'Signale prüfen')),
+        sigOut);
     }
 
     return { cards: [cardPanels, cardLook, cardSave, cardTest, cardPins].filter(Boolean) };
