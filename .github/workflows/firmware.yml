@@ -40,6 +40,8 @@ jobs:
       - name: Empfänger bauen
         env:
           PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+          # pioasm/picotool aus SDK 2.1.1 vergessen <cstdint>; mit GCC 15 auf dem Runner bricht das ab
+          CXXFLAGS: -include cstdint
         run: |
           cmake -S firmware/receiver -B firmware/receiver/build -G Ninja
           cmake --build firmware/receiver/build
@@ -47,6 +49,8 @@ jobs:
       - name: Sender bauen
         env:
           PICO_SDK_PATH: ${{ runner.temp }}/pico-sdk
+          # pioasm/picotool aus SDK 2.1.1 vergessen <cstdint>; mit GCC 15 auf dem Runner bricht das ab
+          CXXFLAGS: -include cstdint
         run: |
           cmake -S firmware/sender -B firmware/sender/build -G Ninja
           cmake --build firmware/sender/build
